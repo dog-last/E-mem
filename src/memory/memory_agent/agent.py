@@ -1,0 +1,258 @@
+import torch
+import uuid
+from datetime import datetime
+from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
+from typing import List
+from kv_block_manager.block import KVBlock
+from utils.prompt import MEMORY_AGENT_SYS_PROMPT
+
+
+class MemoryAgent:
+    def __init__(self, model_id: str, 
+                 model_context_window: int =32768, 
+                 attn_implementation: str = "sdpa",
+                   device_map: str = "auto", 
+                   quantization_config=None):
+        self.model_id = model_id
+        self.model_context_window = model_context_window
+        self.block_size = model_context_window // 4
+
+        self.summary=None
+        
+        print(f"Loading model: {model_id}")
+        self.tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+
+        self.is_active=True     # This will set False if the block is full, and then this agent can not add new memories, but can still be queried
+        
+        model_kwargs = {
+            "device_map": device_map,
+            "attn_implementation": attn_implementation,
+            "trust_remote_code": True
+        }
+        if quantization_config is not None:
+            model_kwargs["quantization_config"] = quantization_config
+        else:
+            model_kwargs["dtype"] = torch.bfloat16
+        
+        self.model = AutoModelForCausalLM.from_pretrained(model_id, **model_kwargs)
+        
+        self._extract_chat_tokens()
+        
+        # Initialize first block
+        self.current_block = KVBlock(
+            block_id=uuid.uuid4(),
+            create_timestamp=datetime.now().strftime("%Y%m%d_%H%M%S"),
+            block_size=self.block_size
+        )
+        self.global_offset = 0
+        self.saved_chunks = []
+        self.chunk_number = 0
+    
+    def _extract_chat_tokens(self):
+        """Extract chat format tokens."""
+        test_user = [{"role": "user", "content": "TEST"}]
+        test_output = self.tokenizer.apply_chat_template(test_user, tokenize=False, add_generation_prompt=False)
+        lines = test_output.split('TEST')
+        if len(lines) >= 2:
+            before = lines[0].rstrip('\n').split('\n')[-1]
+            after = lines[1].split('\n')[0]
+            if 'user' in before:
+                self.role_start = before.split('user')[0]
+                self.role_end = after
+            else:
+                self.role_start = "<|im_start|>"
+                self.role_end = "<|im_end|>"
+        else:
+            self.role_start = "<|im_start|>"
+            self.role_end = "<|im_end|>"
+    
+    def _add_knowledge(self, text_chunks: List[str]) -> bool:
+        """
+        Add knowledge chunks incrementally.
+        Returns True if block became full, False otherwise.
+        Args:
+            text_chunks (List[str]): List of text chunks to be added.   
+        Returns:
+            bool: True if block became full, False otherwise.
+        """
+        block_full = False
+        
+        for i, text_chunk in enumerate(text_chunks, 1):
+            self.chunk_number += 1
+            
+            # Format chunk
+            if self.global_offset == 0:
+                system_msg = [{"role": "system", "content": MEMORY_AGENT_SYS_PROMPT}]
+                system_part = self.tokenizer.apply_chat_template(system_msg, tokenize=False, add_generation_prompt=False)
+                formatted_chunk = system_part + f"{self.role_start}user\nHere is the context information:\n\n[Context {self.chunk_number}]\n{text_chunk}"
+            else:
+                formatted_chunk = f"\n\n[Context {self.chunk_number}]\n{text_chunk}"
+            
+            # Tokenize
+            input_ids = self.tokenizer.encode(formatted_chunk, return_tensors="pt", add_special_tokens=False).to(self.model.device)
+            seq_len = input_ids.shape[1]
+            
+            # Position IDs
+            position_ids = torch.arange(self.global_offset, self.global_offset + seq_len, dtype=torch.long, device=self.model.device).unsqueeze(0)
+            
+            # Load previous cache
+            past_kv = None
+            if self.saved_chunks:
+                past_kv = DynamicCache()
+                num_layers = len(self.saved_chunks[0]["cache"])
+                for layer_idx in range(num_layers):
+                    keys, values = [], []
+                    for chunk_info in self.saved_chunks:
+                        k, v = chunk_info["cache"][layer_idx]
+                        keys.append(k.to(self.model.device))
+                        values.append(v.to(self.model.device))
+                    past_kv.update(torch.cat(keys, dim=2), torch.cat(values, dim=2), layer_idx)
+            
+            # Forward pass
+            with torch.no_grad():
+                outputs = self.model(input_ids=input_ids, position_ids=position_ids, past_key_values=past_kv, use_cache=True)
+            
+            # Extract new cache only
+            full_kv_cache = outputs.past_key_values
+            new_cache_only = []
+            for layer_idx in range(len(full_kv_cache)):
+                k_full, v_full = full_kv_cache[layer_idx]
+                k_new = k_full[:, :, -seq_len:, :].to("cpu")
+                v_new = v_full[:, :, -seq_len:, :].to("cpu")
+                new_cache_only.append((k_new, v_new))
+            
+            # Store chunk
+            self.saved_chunks.append({"cache": new_cache_only, "start": self.global_offset, "length": seq_len})
+            self.global_offset += seq_len
+            
+            # Save to block
+            cache_state = {
+                "global_offset": self.global_offset,
+                "saved_chunks": self.saved_chunks,
+                "chunk_number": self.chunk_number,
+                "model_id": self.model_id
+            }
+            block_full = self.current_block.save_cache(cache_state, seq_len)
+            
+            if block_full:
+                print(f"Block {self.current_block.block_id} is full ({self.current_block.block_used}/{self.block_size} tokens)")
+                return True
+        
+        # TODO: handle the block full case directly in the add_knowlege function, instead of returning the flag?
+        return block_full
+    
+
+    def add(self,text_chunks: List[str]):
+        """
+        Check if the agent is active
+        And if so, calling the _add_knowledge function
+        Handle the return bool
+        If the block is full, set the agent to inactive, and create summaries.
+        """
+        if not self.is_active:
+            raise "The agent is inactive, since the block is already full. So no new knowledge can be added."
+        block_full = self._add_knowledge(text_chunks)
+        if block_full:
+            self.is_active = False
+            self._create_summaries()
+
+    def _create_summaries(self):
+        """
+        Create summaries of all the stored knowledge chunks.
+        And this is only needed after the agent is no longer in a active state
+        """
+        summary_instruction = "Summarize all the context information provided above accurately and concisely."
+        self.summary = self._agent_generate(instruction=summary_instruction, max_new_tokens=4096)
+
+    def _agent_generate(self,max_new_tokens: int=1024, instruction: str=None, question: str=None)-> str:
+        """
+        This is a base function for the agent to generate text
+        It can be called by query and _create_summaries functions
+        Args:
+            max_new_tokens (int): Maximum number of tokens to generate.
+            instruction (str): The instruction.
+            question (str): The user question.
+        Returns:
+            str: The generated text.
+        """
+        if not self.saved_chunks:
+            return "No knowledge available."
+        
+        # Merge cache
+        merged_cache = DynamicCache()
+        num_layers = len(self.saved_chunks[0]["cache"])
+        for layer_idx in range(num_layers):
+            keys, values = [], []
+            for chunk_info in self.saved_chunks:
+                k, v = chunk_info["cache"][layer_idx]
+                keys.append(k)
+                values.append(v)
+            merged_cache.update(torch.cat(keys, dim=2).to(self.model.device), torch.cat(values, dim=2).to(self.model.device), layer_idx)
+        
+        # Format query
+        if question:
+            # This means we are in the query mode
+            formatted_query = f"\n\nBased on the context information provided above, please answer this question:\n{question}{self.role_end}\n{self.role_start}assistant\n"
+        elif instruction:
+            formatted_query=f"\n\nBased on the context information provided above, please follow this instruction:\n{instruction}{self.role_end}\n{self.role_start}assistant\n"
+        else:
+            raise ValueError("Either question or instruction must be provided.")
+        
+        input_ids = self.tokenizer.encode(formatted_query, return_tensors="pt", add_special_tokens=False).to(self.model.device)
+        query_len = input_ids.shape[1]
+        
+        # Position IDs
+        query_position_ids = torch.arange(self.global_offset, self.global_offset + query_len, dtype=torch.long, device=self.model.device).unsqueeze(0)
+        
+        # Attention mask
+        cache_length = merged_cache.get_seq_length()
+        attention_mask = torch.ones((1, cache_length + query_len), dtype=torch.long, device=self.model.device)
+        
+        # Manual generation with repetition penalty
+        next_token_input = input_ids
+        next_position_ids = query_position_ids
+        past_kv = merged_cache
+        current_position = self.global_offset + query_len
+        
+        eos_token_ids = [self.tokenizer.eos_token_id] if not isinstance(self.tokenizer.eos_token_id, (list, tuple)) else self.tokenizer.eos_token_id
+        generated_tokens = []
+        repetition_penalty = 1.1
+        
+        with torch.no_grad():
+            for _ in range(max_new_tokens):
+                outputs = self.model(input_ids=next_token_input, attention_mask=attention_mask, position_ids=next_position_ids, past_key_values=past_kv, use_cache=True)
+                next_token_logits = outputs.logits[:, -1, :].clone()
+                
+                # Repetition penalty
+                for token_id in set(generated_tokens[-50:]):
+                    if next_token_logits[0, token_id] > 0:
+                        next_token_logits[0, token_id] /= repetition_penalty
+                    else:
+                        next_token_logits[0, token_id] *= repetition_penalty
+                
+                next_token = next_token_logits.argmax(dim=-1).unsqueeze(-1)
+                generated_tokens.append(next_token.item())
+                
+                next_token_input = next_token
+                next_position_ids = torch.tensor([[current_position]], dtype=torch.long, device=self.model.device)
+                attention_mask = torch.cat([attention_mask, torch.ones((1, 1), dtype=torch.long, device=self.model.device)], dim=1)
+                current_position += 1
+                past_kv = outputs.past_key_values
+                
+                if next_token.item() in eos_token_ids:
+                    break
+        
+        # Decode
+        response = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
+        return response
+    
+    def query(self, question: str, max_new_tokens: int = 1024) -> str:
+        """
+        Query using cached knowledge.
+        Args:
+            question (str): The user question.
+            max_new_tokens (int): Maximum number of tokens to generate.
+        Returns:
+            str: The generated response.
+        """
+        return self._generate_text(max_new_tokens=max_new_tokens, question=question)
