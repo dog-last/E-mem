@@ -1,13 +1,13 @@
 import uuid
+
 import torch
-from transformers.cache_utils import DynamicCache
 
 
 class KVBlock:
     def __init__(self,block_id:uuid.UUID,create_timestamp:str,block_size:int=8192):
         self.block_id=block_id
         self.create_timestamp=create_timestamp
-        self.store_target=f"kv_cache_{self.block_id}_{self.create_timestamp}.pt"
+        self.store_target=f"./kv_store_data/kv_cache_{self.block_id}_{self.create_timestamp}.pt"
         # block size measures the tokes that's stored instead of number of informations/chats
         # So the context window size should be at least three times of the block size
         self.block_size=block_size
