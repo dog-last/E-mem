@@ -207,7 +207,7 @@ class MemoryAgent:
         # Format query
         if question:
             # This means we are in the query mode
-            formatted_query = f"\n\nBased on the context information provided above, please answer this question:\n{question}{self.role_end}\n{self.role_start}assistant\n"
+            formatted_query = f"\n\nBased on the context information provided above, please extract all the original information that is relevant to the question(at least 40 informations):\n{question}{self.role_end}\n{self.role_start}assistant\n"
         elif instruction:
             formatted_query=f"\n\nBased on the context information provided above, please follow this instruction:\n{instruction}{self.role_end}\n{self.role_start}assistant\n"
         else:
@@ -265,12 +265,10 @@ class MemoryAgent:
         return response
     
     def _remove_thinking_content(self, response: str) -> str:
-
-        
-        thinking_pattern=r'<thinking>.*?</thinking>'
-    
         cleaned_response = response
-        cleaned_response = re.sub(thinking_pattern, '', cleaned_response, flags=re.DOTALL | re.IGNORECASE)
+        # Remove both <thinking> and <think> tags
+        cleaned_response = re.sub(r'<thinking>.*?</thinking>', '', cleaned_response, flags=re.DOTALL | re.IGNORECASE)
+        cleaned_response = re.sub(r'<think>.*?</think>', '', cleaned_response, flags=re.DOTALL | re.IGNORECASE)
         
         cleaned_response = re.sub(r'\n\s*\n', '\n\n', cleaned_response)  # 规范化多个空行
         cleaned_response = cleaned_response.strip()  # 去除首尾空白

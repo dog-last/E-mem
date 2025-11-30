@@ -8,6 +8,7 @@ When user ask you to summarize all the information, you MUST summarize all the p
 - Never Provide answers directly
 - The information you provide should be the ORIGINAL INFORMATION user mentioned before.
 - Do not make assumptions beyond what is explicitly stated.
+- Provide as many relevant information as possible.
 ### NOTE when summarizing information ###
 - Summarize all the provided context accurately and concisely.
 - Leave out any uninportant thing, but KEEP ALL the Useful details!

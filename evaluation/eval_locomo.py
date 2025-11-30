@@ -20,22 +20,33 @@ from src.conversation_manager.chat_handler import ChatManager
 
 def setup_logger(log_file: str) -> logging.Logger:
     """Setup logging configuration."""
-    logger = logging.getLogger('locomo_eval')
-    logger.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    # Configure root logger to capture all logs
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
     
+    # Clear existing handlers
+    root_logger.handlers.clear()
+    
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    # Console handler
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
+    console_handler.setLevel(logging.INFO)
+    root_logger.addHandler(console_handler)
     
+    # File handler
     if log_file:
         log_dir = os.path.dirname(log_file)
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
         file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
+        file_handler.setLevel(logging.INFO)
+        root_logger.addHandler(file_handler)
     
+    # Return specific logger for eval
+    logger = logging.getLogger('locomo_eval')
     return logger
 
 
@@ -88,7 +99,7 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
         
         for session_key, session in sample.conversation.sessions.items():
             for turn in session.turns:
-                memory_text = f"[{session.date_time}] {turn.speaker}: {turn.text}"
+                memory_text = f"You MUST use add_memory tool to store the following information WITH TIME(**MUST STORE THE TIME IN THE FORMAT OF 'YYYY-MM-DD HH:MM:SS'**) along with the speaker and CONTENTs.[{session.date_time}] {turn.speaker}: {turn.text}"
                 try:
                     # Use auto_save for conversation turns if enabled
                     agent.chat(memory_text, auto_save=conversation_auto_save)
@@ -123,19 +134,20 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
             # Build prompt based on category
             if qa.category == 5:
                 # Adversarial question
-                prompt = f"Based on the conversation history, answer: {qa.question}. If the information is not in the conversation, respond with 'Not mentioned in the conversation'. Provide only the answer."
+                prompt = f"You MUST use query_memory tool to search the conversation history before answering. Question: {qa.question}. If the information is not found in memory, respond with 'Not mentioned in the conversation'. Provide only the answer."
             elif qa.category == 2:
                 # Time-related question
-                prompt = f"Based on the conversation history with dates, answer: {qa.question}. Provide the shortest possible answer using words from the conversation."
+                prompt = f"You MUST use query_memory tool to search the conversation history for dates and times. Question: {qa.question}. Provide the shortest possible answer using exact words from the conversation."
             else:
                 # Other categories
-                prompt = f"Based on the conversation history, answer: {qa.question}. Provide a short answer using exact words from the conversation whenever possible."
+                prompt = f"You MUST use query_memory tool to search the conversation history before answering. Question: {qa.question}. Provide a short answer using exact words from the conversation whenever possible."
             
             logger.info(f"\nQuestion {total_questions} (Category {qa.category}): {qa.question}")
             
             try:
                 # NEVER use auto_save for QA questions
-                prediction = agent.chat(prompt, auto_save=False)
+                # Use higher max_new_tokens to allow tool calling
+                prediction = agent.chat(prompt, auto_save=False, max_new_tokens=2048)
                 logger.info(f"Prediction: {prediction}")
                 logger.info(f"Reference: {reference_answer}")
             except Exception as e:

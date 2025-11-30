@@ -109,7 +109,7 @@ class ChatManager(BaseAgent):
         <user_input>{user_input}</user_input>
         """
         
-        response=self.generate_response(user_prompt_formatted,tools=tools,max_tokens=max_new_tokens,max_tool_rounds=1)
+        response=self.generate_response(user_prompt_formatted,tools=tools,max_tokens=max_new_tokens,max_tool_rounds=2)
         return response
 
 
@@ -160,7 +160,7 @@ class ChatManager(BaseAgent):
         try:
             logger.info(f"Querying memory: {query}")
             result=self.memory_handler.query_memory(query)
-            logger.info(f"Memory query completed, result length: {len(result)}")
+            logger.info(f"Memory query completed, result: {result[:100]}...")
         except Exception as e:
             logger.error(f"Memory querying failed: {e}", exc_info=True)
             return f"[ERROR] Memory querying failed: {e}"
