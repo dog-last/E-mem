@@ -1,3 +1,4 @@
+import logging
 import re
 import uuid
 from datetime import datetime
@@ -8,6 +9,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 
 from src.memory.kv_block_manager.block import KVBlock
 from src.utils.prompt import MEMORY_AGENT_SYS_PROMPT
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryAgent:
@@ -22,8 +25,9 @@ class MemoryAgent:
 
         self.summary=None
         
-        print(f"Loading model: {model_id}")
+        logger.info(f"Loading model: {model_id}")
         self.tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+        logger.debug(f"Tokenizer loaded for {model_id}")
 
         self.is_active=True     # This will set False if the block is full, and then this agent can not add new memories, but can still be queried
         
@@ -38,8 +42,10 @@ class MemoryAgent:
             model_kwargs["dtype"] = torch.bfloat16
         
         self.model = AutoModelForCausalLM.from_pretrained(model_id, **model_kwargs)
+        logger.info(f"Model loaded successfully: {model_id}")
         
         self._extract_chat_tokens()
+        logger.debug(f"Chat tokens extracted: role_start='{self.role_start}', role_end='{self.role_end}'")
         
         # Initialize first block
         self.current_block = KVBlock(
@@ -138,7 +144,7 @@ class MemoryAgent:
             block_full = self.current_block.save_cache(cache_state, seq_len)
             
             if block_full:
-                print(f"Block {self.current_block.block_id} is full ({self.current_block.block_used}/{self.block_size} tokens)")
+                logger.info(f"Block {self.current_block.block_id} is full ({self.current_block.block_used}/{self.block_size} tokens)")
                 return True
         
         # TODO: handle the block full case directly in the add_knowlege function, instead of returning the flag?
@@ -154,10 +160,13 @@ class MemoryAgent:
         """
         if not self.is_active:
             raise "The agent is inactive, since the block is already full. So no new knowledge can be added."
+        logger.debug(f"Adding {len(text_chunks)} text chunks to memory agent")
         block_full = self._add_knowledge(text_chunks)
         if block_full:
+            logger.info("Memory agent became inactive, creating summaries")
             self.is_active = False
             self._create_summaries()
+            logger.info("Summaries created successfully")
 
     def _create_summaries(self):
         """
@@ -179,7 +188,10 @@ class MemoryAgent:
             str: The generated text.
         """
         if not self.saved_chunks:
+            logger.warning("No knowledge available for generation")
             return "No knowledge available."
+        
+        logger.debug(f"Generating response with max_new_tokens={max_new_tokens}")
         
         # Merge cache
         merged_cache = DynamicCache()
@@ -248,6 +260,7 @@ class MemoryAgent:
         # Decode
         response = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
         response = self._remove_thinking_content(response)
+        logger.debug(f"Generated response length: {len(response)} chars")
         
         return response
     
@@ -273,4 +286,5 @@ class MemoryAgent:
         Returns:
             str: The generated response.
         """
+        logger.debug(f"Querying memory agent: {question[:50]}...")
         return self._agent_generate(max_new_tokens=max_new_tokens, question=question)

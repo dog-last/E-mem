@@ -1,0 +1,33 @@
+# Evaluation Configuration
+
+# Model settings
+model:
+  model_id: "Qwen/Qwen3-0.6B"
+  openai_config: null
+  model_context_window: 32768
+  attn_implementation: "sdpa"
+  device_map: "auto"
+  quantization_config: null
+
+# Memory settings
+memory:
+  clean_cache_first: true
+  router_system_prompt: null
+
+# Evaluation settings
+evaluation:
+  dataset_path: "./eval_data/locomo10.json"
+  output_dir: "results"
+  ratio: 1.0  # Portion of dataset to evaluate (0.0-1.0)
+  
+  # Auto-save settings for conversations
+  # QA questions NEVER use auto_save
+  conversation_auto_save: false  # Set to true to enable auto-save for conversation turns
+  
+  # Categories to evaluate (1-5)
+  categories: [1, 2, 3, 4, 5]
+
+# Logging
+logging:
+  log_dir: "logs"
+  log_level: "INFO"

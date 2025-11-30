@@ -1,0 +1,27 @@
+# Ignore logs and results but keep directory structure
+logs/*
+!logs/.gitkeep
+results/*
+!results/.gitkeep
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment
+.env
+.venv
+env/
+venv/
+
+# config
+config.yaml
+
+# data
+eval_data/

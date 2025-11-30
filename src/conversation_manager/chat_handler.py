@@ -1,6 +1,10 @@
+import logging
+
 from src.agent.base import BaseAgent
 from src.memory.core.loop_handler import MemoryHandler
 from src.utils.prompt import CHAT_SYS_PROMPT
+
+logger = logging.getLogger(__name__)
 
 
 class ChatManager(BaseAgent):
@@ -14,6 +18,7 @@ class ChatManager(BaseAgent):
                    quantization_config=None):
         super().__init__(openai_config,system_prompt)
         self.name="chat_manager"
+        logger.info(f"Initializing ChatManager with model: {model_id}")
         self.add_mem_tool={
                 "type":"function",
                 "function":{
@@ -90,6 +95,7 @@ class ChatManager(BaseAgent):
         
         # Auto-save mode: directly save without LLM processing
         if auto_save:
+            logger.debug("Auto-save mode: directly saving input")
             target_memory = user_input
             result = self.add_memory(target_memory)
             return result
@@ -108,12 +114,14 @@ class ChatManager(BaseAgent):
 
 
     def execute_tool(self, tool_name, arguments):
-        print(f"Executing tool: {tool_name} with arguments: {arguments}")
+        logger.info(f"Executing tool: {tool_name}")
+        logger.debug(f"Tool arguments: {arguments}")
         if tool_name == "add_memory":
             return self.add_memory(arguments.get("memory"))
         elif tool_name == "query_memory":
             return self.search_memory(arguments.get("query"))
         else:
+            logger.error(f"Unknown tool: {tool_name}")
             return f"[ERROR] Unknown tool: {tool_name}"
 
     
@@ -127,12 +135,14 @@ class ChatManager(BaseAgent):
         """
         target_memory = self.handle_user_input if self.save_original_input else memory
         if not target_memory:
+            logger.warning("No memory content provided")
             return "[ERROR] No memory content provided."
         try:
+            logger.info(f"Adding memory: {target_memory[:100]}...")
             self.memory_handler.add_memory(target_memory)
+            logger.info("Memory added successfully")
         except Exception as e:
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Memory adding failed: {e}", exc_info=True)
             return f"[ERROR] Memory adding failed: {e}"
         return "[SUCCESS] Memory added successfully."
     
@@ -145,12 +155,14 @@ class ChatManager(BaseAgent):
             str: The search result.
         """
         if not query:
+            logger.warning("No query content provided")
             return "[ERROR] No query content provided."
         try:
+            logger.info(f"Querying memory: {query}")
             result=self.memory_handler.query_memory(query)
+            logger.info(f"Memory query completed, result length: {len(result)}")
         except Exception as e:
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Memory querying failed: {e}", exc_info=True)
             return f"[ERROR] Memory querying failed: {e}"
         return result
         

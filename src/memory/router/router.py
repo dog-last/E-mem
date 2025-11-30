@@ -1,8 +1,11 @@
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import List
 
 from src.agent.base import BaseAgent
 from src.utils.prompt import ROUTER_SYS_PROMPT
+
+logger = logging.getLogger(__name__)
 
 
 class Router(BaseAgent):
@@ -12,12 +15,15 @@ class Router(BaseAgent):
         super().__init__(openai_config,system_prompt)
         self.name="router"
         self.agent=[]
+        logger.info("Router initialized")
 
     def add_blocks(self, memory_agent):
         """Add inactive memory agent to router for querying."""
         if memory_agent.is_active:
+            logger.warning("Attempted to add active memory agent to router")
             return
         self.agent.append(memory_agent)
+        logger.info(f"Added memory block to router, total blocks: {len(self.agent)}")
 
     def _map_blocks(self,user_query:str,max_blocks:int=5)->list:
         """
@@ -29,6 +35,7 @@ class Router(BaseAgent):
             list: A list of memory agents.
         """
         if not self.agent:
+            logger.debug("No memory agents available for mapping")
             return []
         
         summary_blocks = "\n".join(
@@ -60,11 +67,14 @@ class Router(BaseAgent):
                 # Restrict the total number of indices to max_blocks
                 indices = indices[:max_blocks]
                 selected_agents = [self.agent[idx] for idx in indices if 0 <= idx < len(self.agent)]
+                logger.info(f"Mapped query to {len(selected_agents)} memory blocks")
+                logger.debug(f"Selected block indices: {indices}")
                 return selected_agents
             else:
+                logger.warning("No summary_index found in router response")
                 return []
         except Exception as e:
-            print(f"Error parsing router response: {e}")
+            logger.error(f"Error parsing router response: {e}", exc_info=True)
             return []
         
     
@@ -82,7 +92,10 @@ class Router(BaseAgent):
         """
         relevant_agents_list=self._map_blocks(user_query)
         if not relevant_agents_list:
+            logger.debug("No relevant agents found for query")
             return []
+        logger.debug(f"Querying {len(relevant_agents_list)} relevant memory blocks in parallel")
         with ThreadPoolExecutor(max_workers=len(relevant_agents_list)) as executor:
             results = list(executor.map(lambda agent: agent.query(user_query), relevant_agents_list))
+        logger.info(f"Collected {len(results)} results from memory blocks")
         return results

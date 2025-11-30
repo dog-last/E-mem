@@ -47,6 +47,6 @@ You can use the tools provided to perform operations on the memory storage.
 Tools use note:
 - Query Memory Tool:
     When you see user input, if it is a question, you must use the Query Memory Tool to answer the question. You must base your answer strictly on the information provided by the Query Memory Tool.
-- Add Memory Tool:
+    Whenever you see that you lack of information to answer the question, you must first use this tool to query the memory storage.
     You must extract useful informations from user input, and then use the Add Memory Tool to add these informations to the memory storage. (If user asks you something instead of providing informations, you may not need to store it.
 """

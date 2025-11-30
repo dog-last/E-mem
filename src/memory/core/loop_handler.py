@@ -1,8 +1,11 @@
+import logging
 from concurrent.futures import ThreadPoolExecutor
 
 from src.memory.kv_block_manager.block import clear_cache
 from src.memory.memory_agent.agent import MemoryAgent
 from src.memory.router.router import Router
+
+logger = logging.getLogger(__name__)
 
 
 class AddHandler:
@@ -19,11 +22,13 @@ class AddHandler:
         self.active_memory_agent=None
     
     def create_agent(self):
+        logger.info("Creating new memory agent")
         self.active_memory_agent=MemoryAgent(model_id=self.model_id,
                                              model_context_window=self.model_context_window,
                                              attn_implementation=self.attn_implementation,
                                              device_map=self.device_map,
                                              quantization_config=self.quantization_config)
+        logger.debug(f"Memory agent created with model: {self.model_id}")
 
     def add_memory(self, text: str) -> bool:
         """
@@ -35,12 +40,18 @@ class AddHandler:
         """
         if self.active_memory_agent is None:
             self.create_agent()
+        logger.debug(f"Adding text to memory agent: {text[:50]}...")
         self.active_memory_agent.add([text])
-        return self.active_memory_agent.is_active
+        is_active = self.active_memory_agent.is_active
+        if not is_active:
+            logger.info("Memory agent became full")
+        return is_active
     
     def query_new_agent(self, query: str)->str:
         if self.active_memory_agent is None:
+            logger.debug("No active memory agent for query")
             return "No active memory."
+        logger.debug(f"Querying active memory agent: {query[:50]}...")
         result = self.active_memory_agent.query(query)
         return result
     
@@ -51,9 +62,12 @@ class QueryHandler:
         self.router=router
 
     def query_memory(self,user_query:str)->str:
+        logger.debug(f"Querying inactive memory blocks: {user_query[:50]}...")
         res=self.router.map_reduce_blocks(user_query)
         if not res:
+            logger.debug("No relevant memory found in inactive blocks")
             return "No relevant memory found."
+        logger.info(f"Found {len(res)} relevant memory blocks")
         return "\n".join(res)
         
 
@@ -65,6 +79,7 @@ class MemoryHandler:
                    device_map: str = "auto", 
                    router_system_prompt: str = None,
                    quantization_config=None):
+        logger.info(f"Initializing MemoryHandler with model: {model_id}")
         self.add_handler=AddHandler(model_id,model_context_window,attn_implementation,device_map,quantization_config)
         self.inactive_memory_agents = []
         if router_system_prompt is None:
@@ -72,6 +87,7 @@ class MemoryHandler:
         else:
             self.query_handler=QueryHandler(Router(openai_config=openai_config,system_prompt=router_system_prompt))
         if clean_cache_first:
+            logger.info("Clearing KV cache")
             clear_cache()
         
     def add_memory(self, text: str):
@@ -83,8 +99,10 @@ class MemoryHandler:
         is_active = self.add_handler.add_memory(text)
         if not is_active:
             # Agent became full, move to inactive and create new one
+            logger.info("Moving full memory agent to inactive pool")
             self.inactive_memory_agents.append(self.add_handler.active_memory_agent)
             self.query_handler.router.add_blocks(self.add_handler.active_memory_agent)
+            logger.info(f"Total inactive agents: {len(self.inactive_memory_agents)}")
             self.add_handler.active_memory_agent = None
             self.add_handler.create_agent()
 
@@ -97,12 +115,14 @@ class MemoryHandler:
             str: The response from the memory agents.
         """
         # Use ThreadPoolExecutor for parallel queries
+        logger.debug("Starting parallel memory queries")
         with ThreadPoolExecutor(max_workers=2) as executor:
             old_memory_future = executor.submit(self.query_handler.query_memory, user_query)
             new_memory_future = executor.submit(self.add_handler.query_new_agent, user_query)
             
             old_memory = old_memory_future.result()
             new_memory = new_memory_future.result()
+        logger.debug("Parallel queries completed")
         
         # Handle different cases
         has_old = old_memory != "No relevant memory found."
