@@ -207,7 +207,7 @@ class MemoryAgent:
         # Format query
         if question:
             # This means we are in the query mode
-            formatted_query = f"\n\nBased on the context information provided above, please extract all the original information that is relevant to the question(at least 40 informations):\n{question}{self.role_end}\n{self.role_start}assistant\n"
+            formatted_query = f"\n\nBased on the context information provided above, please extract all the original information that is relevant to the question(**REMEBER to give EXACT datetime** along with information, and the datetime format is 'YYYY-MM-DD HH:MM:SS'.):\n{question}{self.role_end}\n{self.role_start}assistant\n"
         elif instruction:
             formatted_query=f"\n\nBased on the context information provided above, please follow this instruction:\n{instruction}{self.role_end}\n{self.role_start}assistant\n"
         else:
