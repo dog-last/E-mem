@@ -1,9 +1,8 @@
-from multiprocessing import Process
-from typing import List
+from concurrent.futures import ThreadPoolExecutor
 
-from memory.kv_block_manager.block import clear_cache
-from memory.memory_agent.agent import MemoryAgent
-from memory.router import Router
+from src.memory.kv_block_manager.block import clear_cache
+from src.memory.memory_agent.agent import MemoryAgent
+from src.memory.router.router import Router
 
 
 class AddHandler:
@@ -26,23 +25,23 @@ class AddHandler:
                                              device_map=self.device_map,
                                              quantization_config=self.quantization_config)
 
-    def add_memory(self, text_chunks: List[str]) -> bool:
+    def add_memory(self, text: str) -> bool:
         """
-        Add the text chunks to the active memory agent.
+        Add text to the active memory agent.
         Args:
-            text_chunks (List[str]): The text chunks to add to the memory agent.
+            text (str): The text to add to the memory agent.
         Returns:
-            bool: False if the memory agent can still be used to add more knowledge, True otherwise. Handle it in the outer handler
+            bool: True if the memory agent is still active, False if it became full.
         """
         if self.active_memory_agent is None:
             self.create_agent()
-        self.active_memory_agent.add(text_chunks)
-        if self.active_memory_agent.is_active:
-            return True
-        return False
+        self.active_memory_agent.add([text])
+        return self.active_memory_agent.is_active
     
-    def query_new_agent(self, text_chunks: List[str])->str:
-        result=self.active_memory_agent.query(text_chunks)
+    def query_new_agent(self, query: str)->str:
+        if self.active_memory_agent is None:
+            return "No active memory."
+        result = self.active_memory_agent.query(query)
         return result
     
 
@@ -67,25 +66,29 @@ class MemoryHandler:
                    router_system_prompt: str = None,
                    quantization_config=None):
         self.add_handler=AddHandler(model_id,model_context_window,attn_implementation,device_map,quantization_config)
+        self.inactive_memory_agents = []
         if router_system_prompt is None:
             self.query_handler=QueryHandler(Router(openai_config=openai_config))
-        self.query_handler=QueryHandler(Router(openai_config=openai_config,system_prompt=router_system_prompt))
+        else:
+            self.query_handler=QueryHandler(Router(openai_config=openai_config,system_prompt=router_system_prompt))
         if clean_cache_first:
             clear_cache()
         
-    def add_memory(self,text_chunks: List[str]):
+    def add_memory(self, text: str):
         """
-        Add the text chunks to the active memory agent.
+        Add text to the active memory agent.
         Args:
-            text_chunks (List[str]): The text chunks to add to the memory agent.
+            text (str): The text to add to the memory agent.
         """
-        agent_full=self.add_handler.add_memory(text_chunks)
-        if agent_full:
-            self.inactive_memory_agent.append(self.add_handler.active_memory_agent)
-            self.add_handler.active_memory_agent=None
+        is_active = self.add_handler.add_memory(text)
+        if not is_active:
+            # Agent became full, move to inactive and create new one
+            self.inactive_memory_agents.append(self.add_handler.active_memory_agent)
+            self.query_handler.router.add_blocks(self.add_handler.active_memory_agent)
+            self.add_handler.active_memory_agent = None
             self.add_handler.create_agent()
 
-    def query_memory(self,user_query:str)->str:
+    def query_memory(self, user_query: str) -> str:
         """
         Query the memory agents for the user query.
         Args:
@@ -93,15 +96,23 @@ class MemoryHandler:
         Returns:
             str: The response from the memory agents.
         """
-        old_memory_query_p=Process(target=self.query_handler.query_memory,args=(user_query,))
-        new_memory_query_p=Process(target=self.add_handler.query_new_agent, args=(user_query, ))
-        old_memory_query_p.start()
-        new_memory_query_p.start()
-        old_memory_query_p.join()
-        new_memory_query_p.join()
-        old_memory=old_memory_query_p.result
-        new_memory=new_memory_query_p.result
-        if old_memory=="No relevant memory found.":
+        # Use ThreadPoolExecutor for parallel queries
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            old_memory_future = executor.submit(self.query_handler.query_memory, user_query)
+            new_memory_future = executor.submit(self.add_handler.query_new_agent, user_query)
+            
+            old_memory = old_memory_future.result()
+            new_memory = new_memory_future.result()
+        
+        # Handle different cases
+        has_old = old_memory != "No relevant memory found."
+        has_new = new_memory != "No active memory."
+        
+        if not has_old and not has_new:
+            return "No memory found."
+        elif not has_old:
             return new_memory
-        all_memory=f"The memory stored a period of time ago: {old_memory}\n\nThe memory stored just now: {new_memory}"
-        return all_memory
+        elif not has_new:
+            return old_memory
+        else:
+            return f"The memory stored a period of time ago: {old_memory}\n\nThe memory stored just now: {new_memory}"

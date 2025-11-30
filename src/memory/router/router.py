@@ -1,8 +1,8 @@
 from concurrent.futures import ThreadPoolExecutor
 from typing import List
 
-from agent.base import BaseAgent
-from utils.prompt import ROUTER_SYS_PROMPT
+from src.agent.base import BaseAgent
+from src.utils.prompt import ROUTER_SYS_PROMPT
 
 
 class Router(BaseAgent):
@@ -13,7 +13,8 @@ class Router(BaseAgent):
         self.name="router"
         self.agent=[]
 
-    def add_blocks(self,memory_agent):
+    def add_blocks(self, memory_agent):
+        """Add inactive memory agent to router for querying."""
         if memory_agent.is_active:
             return
         self.agent.append(memory_agent)
@@ -56,9 +57,10 @@ class Router(BaseAgent):
             if match:
                 indices_str = match.group(1).strip()
                 indices = [int(idx.strip()) for idx in indices_str.split(',') if idx.strip().isdigit()]
-                # restrict the total number of indices to max_blocks
+                # Restrict the total number of indices to max_blocks
+                indices = indices[:max_blocks]
                 selected_agents = [self.agent[idx] for idx in indices if 0 <= idx < len(self.agent)]
-                return selected_agents[:max_blocks]
+                return selected_agents
             else:
                 return []
         except Exception as e:

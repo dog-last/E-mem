@@ -9,7 +9,8 @@ class BaseAgent(ABC):
         if openai_config is None:
             raise NotImplementedError("Other types of LLM provider is not supported yet.")
         
-        self.openai_config=openai_config
+        self.openai_config=openai_config.copy()
+        self.model = self.openai_config.pop("model", "gpt-4o-mini")  # Extract model, default to gpt-4o-mini
         self.system_prompt=system_prompt
         self.llm = OpenAI(**self.openai_config)
         self.messgages=[
@@ -31,7 +32,7 @@ class BaseAgent(ABC):
         
         while tool_round_count < max_tool_rounds:
             response = self.llm.chat.completions.create(
-                model=self.openai_config.get("model", "gpt-4o-mini"),
+                model=self.model,
                 messages=self.messgages,
                 tools=tools,
                 max_tokens=max_tokens
@@ -61,7 +62,7 @@ class BaseAgent(ABC):
         
         # Max tool rounds reached, make final call for response
         final_response = self.llm.chat.completions.create(
-            model=self.openai_config.get("model", "gpt-4o-mini"),
+            model=self.model,
             messages=self.messgages,
             max_tokens=max_tokens
         )

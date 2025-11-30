@@ -1,6 +1,6 @@
-from agent.base import BaseAgent
-from memory.core import MemoryHandler
-from utils.prompt import CHAT_SYS_PROMPT
+from src.agent.base import BaseAgent
+from src.memory.core.loop_handler import MemoryHandler
+from src.utils.prompt import CHAT_SYS_PROMPT
 
 
 class ChatManager(BaseAgent):
@@ -16,33 +16,37 @@ class ChatManager(BaseAgent):
         self.name="chat_manager"
         self.add_mem_tool={
                 "type":"function",
-                "name":"add_memory",
-                "description":"This can store some information into memory blocks, so that you can use it in the future.",
-                "parameters":{
-                    "type":"object",
-                    "properties":{
-                        "memory":{
-                            "type":"string",
-                            "description":"The memory content to be stored."
-                        }
-                    },
-                    "required":["memory"]
+                "function":{
+                    "name":"add_memory",
+                    "description":"This can store some information into memory blocks, so that you can use it in the future.",
+                    "parameters":{
+                        "type":"object",
+                        "properties":{
+                            "memory":{
+                                "type":"string",
+                                "description":"The memory content to be stored."
+                            }
+                        },
+                        "required":["memory"]
+                    }
                 }
             }
         
         self.search_mem_tool={
                 "type":"function",
-                "name":"query_memory",
-                "description":"This can query some information from memory blocks, so that you can use it to answer user questions.",
-                "parameters":{
-                    "type":"object",
-                    "properties":{
-                        "query":{
-                            "type":"string",
-                            "description":"The query content to be used to query memory."
-                        }
-                    },
-                    "required":["query"]
+                "function":{
+                    "name":"query_memory",
+                    "description":"This can query some information from memory blocks, so that you can use it to answer user questions.",
+                    "parameters":{
+                        "type":"object",
+                        "properties":{
+                            "query":{
+                                "type":"string",
+                                "description":"The query content to be used to query memory."
+                            }
+                        },
+                        "required":["query"]
+                    }
                 }
             }
         self.auto_save=False
@@ -68,7 +72,6 @@ class ChatManager(BaseAgent):
     def chat(self,user_input:str,outer_tools=None,
              auto_save:bool=False,
              save_original_input:bool=False,
-             need_search:bool=True,
              max_new_tokens:int=1024)->str:
         """
         Chat with the user.
@@ -77,7 +80,6 @@ class ChatManager(BaseAgent):
             outer_tools (list): The outer tools.
             auto_save (bool): Whether to auto save the memory. It will auto save the user_input, and will not ask agent to decide.
             save_original_input (bool): Whether to save the original input. It will overwrite the parameter in the tool calling.
-            need_search (bool): Whether to enable memory search.
             max_new_tokens (int): The max new tokens.
         Returns:
             str: The chat response.
@@ -86,7 +88,7 @@ class ChatManager(BaseAgent):
         tools=[] if outer_tools is None else outer_tools.copy()
         
         tools.append(self.add_mem_tool)        
-        tools.append(self.search_mem_tool)  # We always enable memory search.
+        tools.append(self.search_mem_tool)
         
         self.auto_save=auto_save
         self.save_original_input=save_original_input
@@ -96,8 +98,7 @@ class ChatManager(BaseAgent):
         """
         
         response=self.generate_response(user_prompt_formatted,tools=tools,max_tokens=max_new_tokens,max_tool_rounds=1)
-        if response:
-            print(f"Chat response: {response}")
+        return response
 
 
     def execute_tool(self, tool_name, arguments):
@@ -110,20 +111,22 @@ class ChatManager(BaseAgent):
             return f"[ERROR] Unknown tool: {tool_name}"
 
     
-    def add_memory(self,memory:str)->str:
+    def add_memory(self, memory: str) -> str:
         """
         Add memory to the memory blocks.
         Args:
             memory (str): The memory content to be stored.
         Returns:
-            str: Sucess or failure message.
+            str: Success or failure message.
         """
-        target_memory=self.handle_user_input if self.save_original_input else memory
+        target_memory = self.handle_user_input if self.save_original_input else memory
         if not target_memory:
             return "[ERROR] No memory content provided."
         try:
             self.memory_handler.add_memory(target_memory)
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return f"[ERROR] Memory adding failed: {e}"
         return "[SUCCESS] Memory added successfully."
     
@@ -140,6 +143,8 @@ class ChatManager(BaseAgent):
         try:
             result=self.memory_handler.query_memory(query)
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return f"[ERROR] Memory querying failed: {e}"
         return result
         

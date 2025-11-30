@@ -4,10 +4,10 @@ from datetime import datetime
 from typing import List
 
 import torch
-from kv_block_manager.block import KVBlock
 from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 
-from utils.prompt import MEMORY_AGENT_SYS_PROMPT
+from src.memory.kv_block_manager.block import KVBlock
+from src.utils.prompt import MEMORY_AGENT_SYS_PROMPT
 
 
 class MemoryAgent:
@@ -18,7 +18,7 @@ class MemoryAgent:
                    quantization_config=None):
         self.model_id = model_id
         self.model_context_window = model_context_window
-        self.block_size = model_context_window*0.9
+        self.block_size = int(model_context_window * 0.9)
 
         self.summary=None
         
@@ -273,4 +273,4 @@ class MemoryAgent:
         Returns:
             str: The generated response.
         """
-        return self._generate_text(max_new_tokens=max_new_tokens, question=question)
+        return self._agent_generate(max_new_tokens=max_new_tokens, question=question)

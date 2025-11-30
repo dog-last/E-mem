@@ -8,3 +8,10 @@ wheels/
 
 # Virtual environments
 .venv
+
+# KV cache data
+kv_data/
+*.pt
+
+# Configuration
+config.py
