@@ -78,20 +78,26 @@ class ChatManager(BaseAgent):
         Args:
             user_input (str): The user input.
             outer_tools (list): The outer tools.
-            auto_save (bool): Whether to auto save the memory. It will auto save the user_input, and will not ask agent to decide.
+            auto_save (bool): Whether to auto save the memory. It will auto save the user_input directly without LLM processing.
             save_original_input (bool): Whether to save the original input. It will overwrite the parameter in the tool calling.
             max_new_tokens (int): The max new tokens.
         Returns:
             str: The chat response.
         """
         self.handle_user_input=user_input
-        tools=[] if outer_tools is None else outer_tools.copy()
-        
-        tools.append(self.add_mem_tool)        
-        tools.append(self.search_mem_tool)
-        
         self.auto_save=auto_save
         self.save_original_input=save_original_input
+        
+        # Auto-save mode: directly save without LLM processing
+        if auto_save:
+            target_memory = user_input
+            result = self.add_memory(target_memory)
+            return result
+        
+        # Normal mode: let LLM decide
+        tools=[] if outer_tools is None else outer_tools.copy()
+        tools.append(self.add_mem_tool)        
+        tools.append(self.search_mem_tool)
         
         user_prompt_formatted = f"""Please read the user input carefully and answer the question or follow the instructions to finish the tasks:
         <user_input>{user_input}</user_input>

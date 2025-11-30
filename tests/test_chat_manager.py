@@ -234,3 +234,111 @@ class TestChatManager:
         # Verify tools were passed
         call_args = mock_client.chat.completions.create.call_args
         assert len(call_args.kwargs["tools"]) == 3  # add_mem + search_mem + custom
+    
+    @patch("src.conversation_manager.chat_handler.MemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_auto_save_enabled(self, mock_openai, mock_memory_handler_class, mock_openai_config):
+        """Test auto_save bypasses LLM and directly saves."""
+        mock_memory_handler = Mock()
+        mock_memory_handler.add_memory.return_value = None
+        mock_memory_handler_class.return_value = mock_memory_handler
+        
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+        
+        chat = ChatManager(
+            model_id="test-model",
+            openai_config=mock_openai_config
+        )
+        
+        response = chat.chat("Save this information", auto_save=True)
+        
+        # Verify memory was saved
+        mock_memory_handler.add_memory.assert_called_once_with("Save this information")
+        
+        # Verify LLM was NOT called
+        mock_client.chat.completions.create.assert_not_called()
+        
+        # Verify response is success message
+        assert "[SUCCESS]" in response
+    
+    @patch("src.conversation_manager.chat_handler.MemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_auto_save_with_save_original_input(self, mock_openai, mock_memory_handler_class, mock_openai_config):
+        """Test auto_save with save_original_input flag."""
+        mock_memory_handler = Mock()
+        mock_memory_handler.add_memory.return_value = None
+        mock_memory_handler_class.return_value = mock_memory_handler
+        
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+        
+        chat = ChatManager(
+            model_id="test-model",
+            openai_config=mock_openai_config
+        )
+        
+        response = chat.chat(
+            "Original input",
+            auto_save=True,
+            save_original_input=True
+        )
+        
+        # Verify original input was saved
+        mock_memory_handler.add_memory.assert_called_once_with("Original input")
+        
+        # Verify LLM was NOT called
+        mock_client.chat.completions.create.assert_not_called()
+        
+        assert "[SUCCESS]" in response
+    
+    @patch("src.conversation_manager.chat_handler.MemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_auto_save_error_handling(self, mock_openai, mock_memory_handler_class, mock_openai_config):
+        """Test auto_save handles errors properly."""
+        mock_memory_handler = Mock()
+        mock_memory_handler.add_memory.side_effect = Exception("Save failed")
+        mock_memory_handler_class.return_value = mock_memory_handler
+        
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+        
+        chat = ChatManager(
+            model_id="test-model",
+            openai_config=mock_openai_config
+        )
+        
+        response = chat.chat("Save this", auto_save=True)
+        
+        # Verify error message is returned
+        assert "[ERROR]" in response
+        assert "Save failed" in response
+        
+        # Verify LLM was NOT called
+        mock_client.chat.completions.create.assert_not_called()
+    
+    @patch("src.conversation_manager.chat_handler.MemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_auto_save_disabled_uses_llm(self, mock_openai, mock_memory_handler, mock_openai_config):
+        """Test that auto_save=False uses normal LLM flow."""
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_message = Mock()
+        mock_message.content = "LLM response"
+        mock_message.tool_calls = None
+        mock_response.choices = [Mock(message=mock_message)]
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+        
+        chat = ChatManager(
+            model_id="test-model",
+            openai_config=mock_openai_config
+        )
+        
+        response = chat.chat("Hello", auto_save=False)
+        
+        # Verify LLM was called
+        mock_client.chat.completions.create.assert_called_once()
+        
+        # Verify response is from LLM
+        assert response == "LLM response"
