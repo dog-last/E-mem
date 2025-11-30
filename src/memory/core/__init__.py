@@ -11,3 +11,8 @@ Core is a module that contains the core logic of the memory module
 
         - Note: no matter what, the newest agent(Need to trace) should always be activated.
 """
+from .loop_handler import MemoryHandler
+
+__all__=[
+    "MemoryHandler"
+]

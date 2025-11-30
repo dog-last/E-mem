@@ -1,15 +1,16 @@
+import os
 import uuid
 
 import torch
 
 
 class KVBlock:
-    def __init__(self,block_id:uuid.UUID,create_timestamp:str,block_size:int=8192):
+    def __init__(self,block_id:uuid.UUID,create_timestamp:str,block_size:int=32000):
         self.block_id=block_id
         self.create_timestamp=create_timestamp
         self.store_target=f"./kv_store_data/kv_cache_{self.block_id}_{self.create_timestamp}.pt"
         # block size measures the tokes that's stored instead of number of informations/chats
-        # So the context window size should be at least three times of the block size
+        # So the context window size should be at larger than the block size
         self.block_size=block_size
         self.block_used=0   # calc the used tokens
         self.chunk_num=0    # log the number of chunks stored in this block
@@ -36,7 +37,7 @@ class KVBlock:
         torch.save(cache_state, self.store_target)
         self.block_used += total_new_token
         self.chunk_num=cache_state.get('chunk_number',0)
-        if self.block_used >= self.block_size:
+        if self.is_full():
             return True
         else:
             return False
@@ -51,5 +52,11 @@ class KVBlock:
 
 
 
+def clear_cache(self):
+    """Clear all the kv cache file(pt file) stored in the data folder"""
+    for file in os.listdir("./kv_store_data"):
+        if file.endswith(".pt"):
+            print(f"Deleting {file}")
+            os.remove(os.path.join("./kv_store_data", file))
         
 

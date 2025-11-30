@@ -1,9 +1,12 @@
-import torch
+import re
 import uuid
 from datetime import datetime
-from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 from typing import List
+
+import torch
 from kv_block_manager.block import KVBlock
+from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
+
 from utils.prompt import MEMORY_AGENT_SYS_PROMPT
 
 
@@ -15,7 +18,7 @@ class MemoryAgent:
                    quantization_config=None):
         self.model_id = model_id
         self.model_context_window = model_context_window
-        self.block_size = model_context_window // 4
+        self.block_size = model_context_window*0.9
 
         self.summary=None
         
@@ -142,7 +145,7 @@ class MemoryAgent:
         return block_full
     
 
-    def add(self,text_chunks: List[str]):
+    def add(self,text_chunks: List[str])->bool:
         """
         Check if the agent is active
         And if so, calling the _add_knowledge function
@@ -244,7 +247,22 @@ class MemoryAgent:
         
         # Decode
         response = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
+        response = self._remove_thinking_content(response)
+        
         return response
+    
+    def _remove_thinking_content(self, response: str) -> str:
+
+        
+        thinking_pattern=r'<thinking>.*?</thinking>'
+    
+        cleaned_response = response
+        cleaned_response = re.sub(thinking_pattern, '', cleaned_response, flags=re.DOTALL | re.IGNORECASE)
+        
+        cleaned_response = re.sub(r'\n\s*\n', '\n\n', cleaned_response)  # 规范化多个空行
+        cleaned_response = cleaned_response.strip()  # 去除首尾空白
+        
+        return cleaned_response
     
     def query(self, question: str, max_new_tokens: int = 1024) -> str:
         """

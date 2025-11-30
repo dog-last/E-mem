@@ -1,19 +1,24 @@
+from concurrent.futures import ThreadPoolExecutor
+from typing import List
+
 from agent.base import BaseAgent
 from utils.prompt import ROUTER_SYS_PROMPT
 
 
 class Router(BaseAgent):
     def __init__(self,openai_config:dict=None,system_prompt:str=ROUTER_SYS_PROMPT)->None:
+        if not openai_config:
+            raise NotImplementedError("Please provide openai_config for router.")
         super().__init__(openai_config,system_prompt)
         self.name="router"
         self.agent=[]
 
-    def _add_blocks(self,memory_agent):
+    def add_blocks(self,memory_agent):
         if memory_agent.is_active:
             return
         self.agent.append(memory_agent)
 
-    def map_blocks(self,user_query:str,max_blocks:int=3)->list:
+    def _map_blocks(self,user_query:str,max_blocks:int=5)->list:
         """
         Map the user query to relevant memory agents.
         Args:
@@ -59,3 +64,23 @@ class Router(BaseAgent):
         except Exception as e:
             print(f"Error parsing router response: {e}")
             return []
+        
+    
+    def execute_tool(self, tool_name, arguments):
+        pass
+
+
+    def map_reduce_blocks(self,user_query:str)->List[str]:
+        """
+        Collect all the responses from the relevant memory agents.
+        Args:
+            user_query (str): The user query.
+        Returns:
+            list: A list of responses.
+        """
+        relevant_agents_list=self._map_blocks(user_query)
+        if not relevant_agents_list:
+            return []
+        with ThreadPoolExecutor(max_workers=len(relevant_agents_list)) as executor:
+            results = list(executor.map(lambda agent: agent.query(user_query), relevant_agents_list))
+        return results
