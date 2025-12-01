@@ -166,7 +166,7 @@ class ChatManager(BaseAgent):
         try:
             logger.info(f"Querying memory: {query}")
             result=self.memory_handler.query_memory(query)
-            logger.info(f"Memory query completed, result: {result[:100]}...")
+            logger.info(f"Memory query completed, result: {result}")
         except Exception as e:
             logger.error(f"Memory querying failed: {e}", exc_info=True)
             return f"[ERROR] Memory querying failed: {e}"
