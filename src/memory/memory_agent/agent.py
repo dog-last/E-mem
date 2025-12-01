@@ -56,16 +56,27 @@ class MemoryAgent:
             # Multi-GPU: extract all GPU devices
             unique_devices = set()
             for device in self.model.hf_device_map.values():
-                if isinstance(device, str) and 'cuda' in device:
+                if isinstance(device, int):
+                    unique_devices.add(torch.device(f'cuda:{device}'))
+                elif isinstance(device, str) and 'cuda' in device:
                     unique_devices.add(torch.device(device))
                 elif isinstance(device, torch.device) and device.type == 'cuda':
                     unique_devices.add(device)
-            self.available_devices = sorted(list(unique_devices), key=lambda d: d.index)
-            self.primary_device = self.available_devices[0] if self.available_devices else self.model.device
+            if unique_devices:
+                self.available_devices = sorted(list(unique_devices), key=lambda d: d.index)
+                self.primary_device = self.available_devices[0]
+            else:
+                # Fallback if no CUDA devices found
+                self.primary_device = self.model.device
+                self.available_devices = [self.primary_device]
         else:
             # Single device
             self.primary_device = self.model.device
             self.available_devices = [self.primary_device]
+        
+        if not self.available_devices:
+            raise RuntimeError("No available devices found for cache storage")
+        
         logger.info(f"Using {len(self.available_devices)} device(s) for cache: {self.available_devices}")
         
         self._extract_chat_tokens()
