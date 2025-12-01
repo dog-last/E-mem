@@ -99,7 +99,11 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
         
         for session_key, session in sample.conversation.sessions.items():
             for turn in session.turns:
-                memory_text = f"You MUST use add_memory tool to store the following information WITH TIME(**MUST STORE THE TIME IN THE FORMAT OF 'YYYY-MM-DD HH:MM:SS'**) along with the speaker and CONTENTs.[{session.date_time}] {turn.speaker}: {turn.text}"
+                if conversation_auto_save:
+                    memory_text = f"[{session.date_time}] {turn.speaker}: {turn.text}"
+                else:
+                    memory_text = f"YOU MUST use add_memory tool to store the extracted information from the following text WITH EXACTTIME(**MUST STORE THE TIME IN THE FORMAT OF 'YYYY-MM-DD HH:MM:SS'**) and speaker.[{session.date_time}] {turn.speaker}: {turn.text}"
+                
                 try:
                     # Use auto_save for conversation turns if enabled
                     agent.chat(memory_text, auto_save=conversation_auto_save)

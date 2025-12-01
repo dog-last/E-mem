@@ -51,33 +51,10 @@ class MemoryAgent:
         self.model = AutoModelForCausalLM.from_pretrained(model_id, **model_kwargs)
         logger.info(f"Model loaded successfully: {model_id}")
         
-        # Get available devices for cache distribution
-        if hasattr(self.model, 'hf_device_map'):
-            # Multi-GPU: extract all GPU devices
-            unique_devices = set()
-            for device in self.model.hf_device_map.values():
-                if isinstance(device, int):
-                    unique_devices.add(torch.device(f'cuda:{device}'))
-                elif isinstance(device, str) and 'cuda' in device:
-                    unique_devices.add(torch.device(device))
-                elif isinstance(device, torch.device) and device.type == 'cuda':
-                    unique_devices.add(device)
-            if unique_devices:
-                self.available_devices = sorted(list(unique_devices), key=lambda d: d.index)
-                self.primary_device = self.available_devices[0]
-            else:
-                # Fallback if no CUDA devices found
-                self.primary_device = self.model.device
-                self.available_devices = [self.primary_device]
-        else:
-            # Single device
-            self.primary_device = self.model.device
-            self.available_devices = [self.primary_device]
-        
-        if not self.available_devices:
-            raise RuntimeError("No available devices found for cache storage")
-        
-        logger.info(f"Using {len(self.available_devices)} device(s) for cache: {self.available_devices}")
+        # Get layer-to-device mapping
+        self.layer_devices = self._get_layer_devices()
+        self.primary_device = self.layer_devices[0] if self.layer_devices else self.model.device
+        logger.info(f"Layer devices mapped: {len(self.layer_devices)} layers across devices")
         
         self._extract_chat_tokens()
         logger.debug(f"Chat tokens extracted: role_start='{self.role_start}', role_end='{self.role_end}'")
@@ -91,6 +68,20 @@ class MemoryAgent:
         self.global_offset = 0
         self.saved_chunks = []
         self.chunk_number = 0
+        self.merged_cache = None  # Cache merged KV for incremental updates
+    
+    def _get_layer_devices(self):
+        """Get the device for each transformer layer."""
+        layer_devices = []
+        if hasattr(self.model, 'model') and hasattr(self.model.model, 'layers'):
+            for layer in self.model.model.layers:
+                # Get device from first parameter
+                device = next(layer.parameters()).device
+                layer_devices.append(device)
+        else:
+            # Fallback: use model device for all layers
+            layer_devices = [self.model.device] * 32  # Assume 32 layers
+        return layer_devices
     
     def _extract_chat_tokens(self):
         """Extract chat format tokens."""
@@ -139,25 +130,26 @@ class MemoryAgent:
             # Position IDs
             position_ids = torch.arange(self.global_offset, self.global_offset + seq_len, dtype=torch.long, device=self.primary_device).unsqueeze(0)
             
-            # Load previous cache
-            past_kv = None
-            if self.saved_chunks:
+            # Use cached merged KV or build incrementally
+            past_kv = self.merged_cache
+            if past_kv is None and self.saved_chunks:
+                # First time: build from scratch
                 past_kv = DynamicCache()
                 num_layers = len(self.saved_chunks[0]["cache"])
                 for layer_idx in range(num_layers):
+                    target_device = self.layer_devices[layer_idx]
                     keys, values = [], []
-                    target_device = self.available_devices[layer_idx % len(self.available_devices)]
                     for chunk_info in self.saved_chunks:
                         k, v = chunk_info["cache"][layer_idx]
-                        keys.append(k.to(target_device, non_blocking=True))
-                        values.append(v.to(target_device, non_blocking=True))
+                        keys.append(k.to(target_device))
+                        values.append(v.to(target_device))
                     past_kv.update(torch.cat(keys, dim=2), torch.cat(values, dim=2), layer_idx)
             
             # Forward pass
             with torch.no_grad():
                 outputs = self.model(input_ids=input_ids, position_ids=position_ids, past_key_values=past_kv, use_cache=True)
             
-            # Extract new cache only and distribute across GPUs
+            # Extract new cache only, keep on original device
             full_kv_cache = outputs.past_key_values
             new_cache_only = []
             num_layers = len(full_kv_cache)
@@ -165,13 +157,14 @@ class MemoryAgent:
                 k_full, v_full = full_kv_cache[layer_idx]
                 k_new = k_full[:, :, -seq_len:, :]
                 v_new = v_full[:, :, -seq_len:, :]
-                # Distribute layers across available devices
-                target_device = self.available_devices[layer_idx % len(self.available_devices)]
-                new_cache_only.append((k_new.to(target_device), v_new.to(target_device)))
+                new_cache_only.append((k_new, v_new))
             
             # Store chunk
             self.saved_chunks.append({"cache": new_cache_only, "start": self.global_offset, "length": seq_len})
             self.global_offset += seq_len
+            
+            # Update merged cache incrementally
+            self.merged_cache = outputs.past_key_values
             
             # Save to block
             cache_state = {
@@ -232,17 +225,21 @@ class MemoryAgent:
         
         logger.debug(f"Generating response with max_new_tokens={max_new_tokens}")
         
-        # Merge cache with distribution across devices
-        merged_cache = DynamicCache()
-        num_layers = len(self.saved_chunks[0]["cache"])
-        for layer_idx in range(num_layers):
-            keys, values = [], []
-            target_device = self.available_devices[layer_idx % len(self.available_devices)]
-            for chunk_info in self.saved_chunks:
-                k, v = chunk_info["cache"][layer_idx]
-                keys.append(k.to(target_device, non_blocking=True))
-                values.append(v.to(target_device, non_blocking=True))
-            merged_cache.update(torch.cat(keys, dim=2), torch.cat(values, dim=2), layer_idx)
+        # Use cached merged KV
+        if self.merged_cache is None:
+            # Fallback: merge from chunks
+            merged_cache = DynamicCache()
+            num_layers = len(self.saved_chunks[0]["cache"])
+            for layer_idx in range(num_layers):
+                target_device = self.layer_devices[layer_idx]
+                keys, values = [], []
+                for chunk_info in self.saved_chunks:
+                    k, v = chunk_info["cache"][layer_idx]
+                    keys.append(k.to(target_device))
+                    values.append(v.to(target_device))
+                merged_cache.update(torch.cat(keys, dim=2), torch.cat(values, dim=2), layer_idx)
+        else:
+            merged_cache = self.merged_cache
         
         # Format query
         if question:
