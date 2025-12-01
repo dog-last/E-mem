@@ -10,9 +10,11 @@ try:
         ATTN_IMPLEMENTATION,
         CLEAN_CACHE_ON_START,
         DEVICE_MAP,
+        MAX_MEMORY,
         MAX_NEW_TOKENS,
         MODEL_CONTEXT_WINDOW,
         MODEL_ID,
+        OFFLOAD_FOLDER,
         OPENAI_CONFIG,
         get_quantization_config,
     )
@@ -24,6 +26,8 @@ except ImportError:
     MODEL_CONTEXT_WINDOW = 32768
     ATTN_IMPLEMENTATION = "sdpa"
     DEVICE_MAP = "auto"
+    MAX_MEMORY = None
+    OFFLOAD_FOLDER = None
     CLEAN_CACHE_ON_START = True
     MAX_NEW_TOKENS = 1024
     
@@ -46,7 +50,9 @@ def main():
         model_context_window=MODEL_CONTEXT_WINDOW,
         attn_implementation=ATTN_IMPLEMENTATION,
         device_map=DEVICE_MAP,
-        quantization_config=get_quantization_config()
+        quantization_config=get_quantization_config(),
+        max_memory=MAX_MEMORY,
+        offload_folder=OFFLOAD_FOLDER
     )
     
     print("Chat manager initialized successfully!")

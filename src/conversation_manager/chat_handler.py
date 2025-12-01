@@ -15,7 +15,9 @@ class ChatManager(BaseAgent):
                  attn_implementation: str = "sdpa",
                    device_map: str = "auto", 
                    router_system_prompt: str = None,
-                   quantization_config=None):
+                   quantization_config=None,
+                   max_memory=None,
+                   offload_folder=None):
         super().__init__(openai_config,system_prompt)
         self.name="chat_manager"
         logger.info(f"Initializing ChatManager with model: {model_id}")
@@ -71,6 +73,10 @@ class ChatManager(BaseAgent):
             memory_kwargs["router_system_prompt"] = router_system_prompt
         if quantization_config is not None:
             memory_kwargs["quantization_config"] = quantization_config
+        if max_memory is not None:
+            memory_kwargs["max_memory"] = max_memory
+        if offload_folder is not None:
+            memory_kwargs["offload_folder"] = offload_folder
         
         self.memory_handler = MemoryHandler(**memory_kwargs)
         

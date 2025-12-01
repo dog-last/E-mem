@@ -21,6 +21,7 @@ class TestMemoryAgent:
         
         mock_model = Mock()
         mock_model.device = torch.device("cpu")
+        del mock_model.hf_device_map
         mock_model_class.from_pretrained.return_value = mock_model
         
         agent = MemoryAgent(model_id="test-model", model_context_window=1000)
@@ -42,6 +43,7 @@ class TestMemoryAgent:
         
         mock_model = Mock()
         mock_model.device = torch.device("cpu")
+        del mock_model.hf_device_map
         mock_model_class.from_pretrained.return_value = mock_model
         
         agent = MemoryAgent(model_id="test-model")
@@ -61,6 +63,7 @@ class TestMemoryAgent:
         
         mock_model = Mock()
         mock_model.device = torch.device("cpu")
+        del mock_model.hf_device_map
         mock_output = Mock()
         mock_output.past_key_values = [(torch.randn(1, 8, 5, 64), torch.randn(1, 8, 5, 64)) for _ in range(4)]
         mock_model.return_value = mock_output
@@ -90,6 +93,7 @@ class TestMemoryAgent:
         
         mock_model = Mock()
         mock_model.device = torch.device("cpu")
+        del mock_model.hf_device_map
         mock_output = Mock()
         mock_output.past_key_values = [(torch.randn(1, 8, 3, 64), torch.randn(1, 8, 3, 64)) for _ in range(4)]
         mock_model.return_value = mock_output
@@ -116,6 +120,7 @@ class TestMemoryAgent:
         
         mock_model = Mock()
         mock_model.device = torch.device("cpu")
+        del mock_model.hf_device_map
         mock_output = Mock()
         mock_output.past_key_values = [(torch.randn(1, 8, 3, 64), torch.randn(1, 8, 3, 64)) for _ in range(4)]
         mock_model.return_value = mock_output
@@ -144,6 +149,7 @@ class TestMemoryAgent:
         
         mock_model = Mock()
         mock_model.device = torch.device("cpu")
+        del mock_model.hf_device_map
         mock_output = Mock()
         mock_output.past_key_values = [(torch.randn(1, 8, 3, 64), torch.randn(1, 8, 3, 64)) for _ in range(4)]
         mock_output.logits = torch.randn(1, 1, 1000)
@@ -171,6 +177,7 @@ class TestMemoryAgent:
         
         mock_model = Mock()
         mock_model.device = torch.device("cpu")
+        del mock_model.hf_device_map
         mock_model_class.from_pretrained.return_value = mock_model
         
         agent = MemoryAgent(model_id="test-model")
@@ -192,6 +199,7 @@ class TestMemoryAgent:
         
         mock_model = Mock()
         mock_model.device = torch.device("cpu")
+        del mock_model.hf_device_map
         mock_output = Mock()
         mock_output.past_key_values = [(torch.randn(1, 8, 3, 64), torch.randn(1, 8, 3, 64)) for _ in range(4)]
         mock_output.logits = torch.randn(1, 1, 1000)
@@ -225,6 +233,7 @@ class TestMemoryAgent:
         
         mock_model = Mock()
         mock_model.device = torch.device("cpu")
+        del mock_model.hf_device_map
         mock_model_class.from_pretrained.return_value = mock_model
         
         agent = MemoryAgent(model_id="test-model")
@@ -248,6 +257,7 @@ class TestMemoryAgent:
         
         mock_model = Mock()
         mock_model.device = torch.device("cpu")
+        del mock_model.hf_device_map
         mock_model_class.from_pretrained.return_value = mock_model
         
         agent = MemoryAgent(model_id="test-model")
@@ -272,6 +282,7 @@ class TestMemoryAgent:
         
         mock_model = Mock()
         mock_model.device = torch.device("cpu")
+        del mock_model.hf_device_map
         mock_output = Mock()
         mock_output.past_key_values = [(torch.randn(1, 8, 3, 64), torch.randn(1, 8, 3, 64)) for _ in range(4)]
         mock_model.return_value = mock_output
@@ -286,3 +297,44 @@ class TestMemoryAgent:
         
         assert agent.chunk_number == 3
         assert len(agent.saved_chunks) == 3
+    
+    @patch("src.memory.memory_agent.agent.AutoModelForCausalLM")
+    @patch("src.memory.memory_agent.agent.AutoTokenizer")
+    @patch("src.memory.memory_agent.agent.KVBlock")
+    def test_multi_gpu_device_handling(self, mock_block_class, mock_tokenizer_class, mock_model_class, temp_kv_dir):
+        """Test device handling for multi-GPU setup."""
+        mock_tokenizer = Mock()
+        mock_tokenizer.apply_chat_template.return_value = "<|im_start|>system\nTest<|im_end|>\n"
+        mock_tokenizer_class.from_pretrained.return_value = mock_tokenizer
+        
+        # Simulate multi-GPU model with hf_device_map
+        mock_model = Mock()
+        mock_model.hf_device_map = {"model.layers.0": "cuda:0", "model.layers.1": "cuda:1"}
+        mock_model.device = torch.device("cuda:0")
+        mock_model_class.from_pretrained.return_value = mock_model
+        
+        agent = MemoryAgent(model_id="test-model")
+        
+        # Verify primary_device is set correctly
+        assert hasattr(agent, "primary_device")
+        assert isinstance(agent.primary_device, torch.device)
+    
+    @patch("src.memory.memory_agent.agent.AutoModelForCausalLM")
+    @patch("src.memory.memory_agent.agent.AutoTokenizer")
+    @patch("src.memory.memory_agent.agent.KVBlock")
+    def test_single_gpu_device_handling(self, mock_block_class, mock_tokenizer_class, mock_model_class, temp_kv_dir):
+        """Test device handling for single GPU setup."""
+        mock_tokenizer = Mock()
+        mock_tokenizer.apply_chat_template.return_value = "<|im_start|>system\nTest<|im_end|>\n"
+        mock_tokenizer_class.from_pretrained.return_value = mock_tokenizer
+        
+        # Simulate single GPU model without hf_device_map
+        mock_model = Mock()
+        mock_model.device = torch.device("cuda:0")
+        del mock_model.hf_device_map
+        mock_model_class.from_pretrained.return_value = mock_model
+        
+        agent = MemoryAgent(model_id="test-model")
+        
+        # Verify primary_device is set to model.device
+        assert agent.primary_device == mock_model.device

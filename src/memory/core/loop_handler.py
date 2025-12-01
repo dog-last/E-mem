@@ -13,12 +13,16 @@ class AddHandler:
                  model_context_window: int =32768, 
                  attn_implementation: str = "sdpa",
                    device_map: str = "auto", 
-                   quantization_config=None):
+                   quantization_config=None,
+                   max_memory=None,
+                   offload_folder=None):
         self.model_id=model_id
         self.model_context_window=model_context_window
         self.attn_implementation=attn_implementation
         self.device_map=device_map
         self.quantization_config=quantization_config
+        self.max_memory=max_memory
+        self.offload_folder=offload_folder
         self.active_memory_agent=None
     
     def create_agent(self):
@@ -27,7 +31,9 @@ class AddHandler:
                                              model_context_window=self.model_context_window,
                                              attn_implementation=self.attn_implementation,
                                              device_map=self.device_map,
-                                             quantization_config=self.quantization_config)
+                                             quantization_config=self.quantization_config,
+                                             max_memory=self.max_memory,
+                                             offload_folder=self.offload_folder)
         logger.debug(f"Memory agent created with model: {self.model_id}")
 
     def add_memory(self, text: str) -> bool:
@@ -78,9 +84,11 @@ class MemoryHandler:
                  attn_implementation: str = "sdpa",
                    device_map: str = "auto", 
                    router_system_prompt: str = None,
-                   quantization_config=None):
+                   quantization_config=None,
+                   max_memory=None,
+                   offload_folder=None):
         logger.info(f"Initializing MemoryHandler with model: {model_id}")
-        self.add_handler=AddHandler(model_id,model_context_window,attn_implementation,device_map,quantization_config)
+        self.add_handler=AddHandler(model_id,model_context_window,attn_implementation,device_map,quantization_config,max_memory,offload_folder)
         self.inactive_memory_agents = []
         if router_system_prompt is None:
             self.query_handler=QueryHandler(Router(openai_config=openai_config))

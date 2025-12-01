@@ -18,7 +18,9 @@ class MemoryAgent:
                  model_context_window: int =32768, 
                  attn_implementation: str = "sdpa",
                    device_map: str = "auto", 
-                   quantization_config=None):
+                   quantization_config=None,
+                   max_memory=None,
+                   offload_folder=None):
         self.model_id = model_id
         self.model_context_window = model_context_window
         self.block_size = int(model_context_window * 0.9)
@@ -41,8 +43,24 @@ class MemoryAgent:
         else:
             model_kwargs["dtype"] = torch.bfloat16
         
+        if max_memory is not None:
+            model_kwargs["max_memory"] = max_memory
+        if offload_folder is not None:
+            model_kwargs["offload_folder"] = offload_folder
+        
         self.model = AutoModelForCausalLM.from_pretrained(model_id, **model_kwargs)
         logger.info(f"Model loaded successfully: {model_id}")
+        
+        # Get primary device for tensor operations (multi-GPU support)
+        if hasattr(self.model, 'hf_device_map'):
+            # Multi-GPU: use first layer's device
+            self.primary_device = next(iter(self.model.hf_device_map.values()))
+            if isinstance(self.primary_device, str):
+                self.primary_device = torch.device(self.primary_device)
+        else:
+            # Single device
+            self.primary_device = self.model.device
+        logger.debug(f"Primary device set to: {self.primary_device}")
         
         self._extract_chat_tokens()
         logger.debug(f"Chat tokens extracted: role_start='{self.role_start}', role_end='{self.role_end}'")
@@ -98,11 +116,11 @@ class MemoryAgent:
                 formatted_chunk = f"\n\n[Context {self.chunk_number}]\n{text_chunk}"
             
             # Tokenize
-            input_ids = self.tokenizer.encode(formatted_chunk, return_tensors="pt", add_special_tokens=False).to(self.model.device)
+            input_ids = self.tokenizer.encode(formatted_chunk, return_tensors="pt", add_special_tokens=False).to(self.primary_device)
             seq_len = input_ids.shape[1]
             
             # Position IDs
-            position_ids = torch.arange(self.global_offset, self.global_offset + seq_len, dtype=torch.long, device=self.model.device).unsqueeze(0)
+            position_ids = torch.arange(self.global_offset, self.global_offset + seq_len, dtype=torch.long, device=self.primary_device).unsqueeze(0)
             
             # Load previous cache
             past_kv = None
@@ -113,8 +131,8 @@ class MemoryAgent:
                     keys, values = [], []
                     for chunk_info in self.saved_chunks:
                         k, v = chunk_info["cache"][layer_idx]
-                        keys.append(k.to(self.model.device))
-                        values.append(v.to(self.model.device))
+                        keys.append(k.to(self.primary_device))
+                        values.append(v.to(self.primary_device))
                     past_kv.update(torch.cat(keys, dim=2), torch.cat(values, dim=2), layer_idx)
             
             # Forward pass
@@ -202,7 +220,7 @@ class MemoryAgent:
                 k, v = chunk_info["cache"][layer_idx]
                 keys.append(k)
                 values.append(v)
-            merged_cache.update(torch.cat(keys, dim=2).to(self.model.device), torch.cat(values, dim=2).to(self.model.device), layer_idx)
+            merged_cache.update(torch.cat(keys, dim=2).to(self.primary_device), torch.cat(values, dim=2).to(self.primary_device), layer_idx)
         
         # Format query
         if question:
@@ -213,15 +231,15 @@ class MemoryAgent:
         else:
             raise ValueError("Either question or instruction must be provided.")
         
-        input_ids = self.tokenizer.encode(formatted_query, return_tensors="pt", add_special_tokens=False).to(self.model.device)
+        input_ids = self.tokenizer.encode(formatted_query, return_tensors="pt", add_special_tokens=False).to(self.primary_device)
         query_len = input_ids.shape[1]
         
         # Position IDs
-        query_position_ids = torch.arange(self.global_offset, self.global_offset + query_len, dtype=torch.long, device=self.model.device).unsqueeze(0)
+        query_position_ids = torch.arange(self.global_offset, self.global_offset + query_len, dtype=torch.long, device=self.primary_device).unsqueeze(0)
         
         # Attention mask
         cache_length = merged_cache.get_seq_length()
-        attention_mask = torch.ones((1, cache_length + query_len), dtype=torch.long, device=self.model.device)
+        attention_mask = torch.ones((1, cache_length + query_len), dtype=torch.long, device=self.primary_device)
         
         # Manual generation with repetition penalty
         next_token_input = input_ids
@@ -249,8 +267,8 @@ class MemoryAgent:
                 generated_tokens.append(next_token.item())
                 
                 next_token_input = next_token
-                next_position_ids = torch.tensor([[current_position]], dtype=torch.long, device=self.model.device)
-                attention_mask = torch.cat([attention_mask, torch.ones((1, 1), dtype=torch.long, device=self.model.device)], dim=1)
+                next_position_ids = torch.tensor([[current_position]], dtype=torch.long, device=self.primary_device)
+                attention_mask = torch.cat([attention_mask, torch.ones((1, 1), dtype=torch.long, device=self.primary_device)], dim=1)
                 current_position += 1
                 past_kv = outputs.past_key_values
                 
