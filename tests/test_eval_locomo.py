@@ -91,6 +91,7 @@ class TestEvaluateDataset:
         mock_load_dataset.return_value = mock_samples
         mock_agent = Mock()
         mock_agent.chat.return_value = "Test answer"
+        mock_agent.last_queried_memory = "Test memory content"  # Add this
         mock_chat_manager.return_value = mock_agent
         mock_calc_metrics.return_value = {
             'exact_match': 1, 'f1': 0.9, 'rouge1_f': 0.8,
@@ -126,6 +127,7 @@ class TestEvaluateDataset:
         
         mock_agent = Mock()
         mock_agent.chat.return_value = "Test"
+        mock_agent.last_queried_memory = "Test memory"
         mock_chat_manager.return_value = mock_agent
         
         with patch('evaluation.eval_locomo.calculate_metrics') as mock_calc:
@@ -147,6 +149,7 @@ class TestEvaluateDataset:
         mock_load_dataset.return_value = mock_samples
         mock_agent = Mock()
         mock_agent.chat.return_value = "Not mentioned"
+        mock_agent.last_queried_memory = "Test memory"
         mock_chat_manager.return_value = mock_agent
         mock_calc_metrics.return_value = {'f1': 1.0, 'exact_match': 1}
         
@@ -167,6 +170,7 @@ class TestEvaluateDataset:
         mock_load_dataset.return_value = mock_samples
         mock_agent = Mock()
         mock_agent.chat.return_value = "Answer"
+        mock_agent.last_queried_memory = "Test memory"
         mock_chat_manager.return_value = mock_agent
         
         # Enable auto_save for conversations
