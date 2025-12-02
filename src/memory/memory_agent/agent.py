@@ -180,7 +180,7 @@ class MemoryAgent:
         If the block is full, set the agent to inactive, and create summaries.
         """
         if not self.is_active:
-            raise "The agent is inactive, since the block is already full. So no new knowledge can be added."
+            raise RuntimeError("The agent is inactive, since the block is already full. So no new knowledge can be added.")
         logger.debug(f"Adding {len(text_chunks)} text chunks to memory agent")
         block_full = self._add_knowledge(text_chunks)
         if block_full:
@@ -197,15 +197,18 @@ class MemoryAgent:
         summary_instruction = "Summarize all the context information provided above accurately and concisely."
         self.summary = self._agent_generate(instruction=summary_instruction, max_new_tokens=8192)
         
-        # Save cache to disk and clear from GPU
-        cache_state = {
-            "global_offset": self.global_offset,
-            "saved_chunks": self.saved_chunks,
-            "chunk_number": self.chunk_number,
-            "model_id": self.model_id,
-            "merged_cache": [(k.cpu(), v.cpu()) for k, v in self.merged_cache]
-        }
-        self.current_block.save_cache(cache_state, 0)
+        # Save cache to disk BEFORE clearing
+        if self.merged_cache is not None:
+            cache_state = {
+                "global_offset": self.global_offset,
+                "saved_chunks": self.saved_chunks,
+                "chunk_number": self.chunk_number,
+                "model_id": self.model_id,
+                "merged_cache": [(k.cpu(), v.cpu()) for k, v in self.merged_cache]
+            }
+            self.current_block.save_cache(cache_state, 0)
+        
+        # Clear from GPU
         self.merged_cache = None
         torch.cuda.empty_cache()
 
