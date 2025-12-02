@@ -138,13 +138,13 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
             # Build prompt based on category
             if qa.category == 5:
                 # Adversarial question
-                prompt = f"You MUST use query_memory tool to search the conversation history before answering. Question: {qa.question}. If the information is not found in memory, respond with 'Not mentioned in the conversation'. Provide only the answer."
+                prompt = f"You MUST use query_memory tool to search the conversation history before answering. And you must use the exact time format 'YYYY-MM-DD HH:MM:SS' to answer if questions are associated with time. Question: {qa.question}. If the information is not found in memory, respond with 'Not mentioned in the conversation'. Provide only the answer."
             elif qa.category == 2:
                 # Time-related question
-                prompt = f"You MUST use query_memory tool to search the conversation history for dates and times. Question: {qa.question}. Provide the shortest possible answer using exact words from the conversation."
+                prompt = f"You MUST use query_memory tool to search the conversation history for dates and times. And you must use the exact time format 'YYYY-MM-DD HH:MM:SS' to answer if questions are associated with time. Question: {qa.question}. Provide the shortest possible answer using exact words from the conversation."
             else:
                 # Other categories
-                prompt = f"You MUST use query_memory tool to search the conversation history before answering. Question: {qa.question}. Provide a short answer using exact words from the conversation whenever possible."
+                prompt = f"You MUST use query_memory tool to search the conversation history before answering. And you must use the exact time format 'YYYY-MM-DD HH:MM:SS' to answer if questions are associated with time. Question: {qa.question}. Provide a short answer using exact words from the conversation whenever possible."
             
             logger.info(f"\nQuestion {total_questions} (Category {qa.category}): {qa.question}")
             
