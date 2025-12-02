@@ -53,7 +53,7 @@ class MemoryAgent:
         
         # Get layer-to-device mapping
         self.layer_devices = self._get_layer_devices()
-        self.primary_device = self.layer_devices[0] if self.layer_devices else self.model.device
+        self.primary_device = self.layer_devices.get(0, self.model.device)
         logger.info(f"Layer devices mapped: {len(self.layer_devices)} layers across devices")
         
         self._extract_chat_tokens()
@@ -71,16 +71,33 @@ class MemoryAgent:
         self.merged_cache = None  # Single KV cache in GPU memory
     
     def _get_layer_devices(self):
-        """Get the device for each transformer layer."""
-        layer_devices = []
-        if hasattr(self.model, 'model') and hasattr(self.model.model, 'layers'):
-            for layer in self.model.model.layers:
-                # Get device from first parameter
-                device = next(layer.parameters()).device
-                layer_devices.append(device)
-        else:
-            # Fallback: use model device for all layers
-            layer_devices = [self.model.device] * 32  # Assume 32 layers
+        """Get accurate device mapping for each layer using hf_device_map."""
+        num_layers = len(self.model.model.layers)
+        layer_devices = {}
+        
+        # Use hf_device_map (ground truth for device_map='auto')
+        if hasattr(self.model, 'hf_device_map'):
+            for key, device_index in self.model.hf_device_map.items():
+                if 'model.layers.' in key:
+                    try:
+                        layer_idx = int(key.split('model.layers.')[1].split('.')[0])
+                        if isinstance(device_index, int):
+                            layer_devices[layer_idx] = torch.device(f'cuda:{device_index}')
+                        else:
+                            layer_devices[layer_idx] = torch.device(device_index)
+                    except (IndexError, ValueError):
+                        continue
+        
+        # Fallback for missing layers
+        for i in range(num_layers):
+            if i not in layer_devices:
+                try:
+                    dev = next(self.model.model.layers[i].parameters()).device
+                    layer_devices[i] = torch.device('cuda:0') if dev.type == 'meta' else dev
+                except Exception as e:
+                    logger.error(f"Error mapping layer {i}: {e}")
+                    layer_devices[i] = torch.device('cuda:0')
+        
         return layer_devices
     
     def _extract_chat_tokens(self):
@@ -209,19 +226,32 @@ class MemoryAgent:
         
         logger.debug(f"Generating response with max_new_tokens={max_new_tokens}")
         
-        # Use cached merged KV or load from disk
-        if self.merged_cache is None:
-            # Load from disk if agent is inactive
+        # Prepare base cache (load from disk if needed)
+        base_cache = self.merged_cache
+        if base_cache is None:
             cache_state = self.current_block.load_cache()
             if "merged_cache" in cache_state:
-                merged_cache = DynamicCache()
+                base_cache = DynamicCache()
                 for layer_idx, (k, v) in enumerate(cache_state["merged_cache"]):
-                    target_device = self.layer_devices[layer_idx]
-                    merged_cache.update(k.to(target_device), v.to(target_device), layer_idx)
+                    target_device = self.layer_devices.get(layer_idx, self.primary_device)
+                    base_cache.update(k.to(target_device), v.to(target_device), layer_idx)
             else:
                 raise RuntimeError("No cache available for inactive agent")
-        else:
-            merged_cache = self.merged_cache
+        
+        # CRITICAL: Fork cache to prevent pollution
+        generation_cache = DynamicCache()
+        
+        # Copy cache data (handle different transformers versions)
+        for layer_idx in range(len(base_cache)):
+            k, v = base_cache[layer_idx]
+            generation_cache.update(k, v, layer_idx)
+        
+        # CRITICAL: Copy _seen_tokens metadata (otherwise model ignores cache)
+        if hasattr(base_cache, '_seen_tokens'):
+            generation_cache._seen_tokens = base_cache._seen_tokens
+        elif len(base_cache) > 0:
+            # Fallback: infer from tensor shape
+            generation_cache._seen_tokens = base_cache[0][0].shape[-2]
         
         # Format query
         if question:
@@ -232,29 +262,58 @@ class MemoryAgent:
         else:
             raise ValueError("Either question or instruction must be provided.")
         
-        input_ids = self.tokenizer.encode(formatted_query, return_tensors="pt", add_special_tokens=False).to(self.primary_device)
+        # Ensure all inputs on first layer device (model input device)
+        first_layer_device = self.layer_devices.get(0, self.primary_device)
+        input_ids = self.tokenizer.encode(formatted_query, return_tensors="pt", add_special_tokens=False).to(first_layer_device)
         query_len = input_ids.shape[1]
         
         # Position IDs
-        query_position_ids = torch.arange(self.global_offset, self.global_offset + query_len, dtype=torch.long, device=self.primary_device).unsqueeze(0)
+        query_position_ids = torch.arange(self.global_offset, self.global_offset + query_len, dtype=torch.long, device=first_layer_device).unsqueeze(0)
         
         # Attention mask
-        cache_length = merged_cache.get_seq_length()
-        attention_mask = torch.ones((1, cache_length + query_len), dtype=torch.long, device=self.primary_device)
+        cache_length = generation_cache.get_seq_length()
+        if cache_length == 0 and len(generation_cache) > 0:
+            # Double check: get from tensor shape
+            cache_length = generation_cache[0][0].shape[-2]
+        attention_mask = torch.ones((1, cache_length + query_len), dtype=torch.long, device=first_layer_device)
         
         # Manual generation with repetition penalty
-        next_token_input = input_ids
-        next_position_ids = query_position_ids
-        past_kv = merged_cache
-        current_position = self.global_offset + query_len
-        
+        # CRITICAL: Use model.generate() or ensure cache is not mutated
         eos_token_ids = [self.tokenizer.eos_token_id] if not isinstance(self.tokenizer.eos_token_id, (list, tuple)) else self.tokenizer.eos_token_id
         generated_tokens = []
         repetition_penalty = 1.1
         
+        # First forward pass with forked cache
         with torch.no_grad():
-            for _ in range(max_new_tokens):
-                outputs = self.model(input_ids=next_token_input, attention_mask=attention_mask, position_ids=next_position_ids, past_key_values=past_kv, use_cache=True)
+            outputs = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=query_position_ids,
+                past_key_values=generation_cache,
+                use_cache=True
+            )
+            next_token_logits = outputs.logits[:, -1, :].clone()
+            next_token = next_token_logits.argmax(dim=-1).unsqueeze(-1)
+            generated_tokens.append(next_token.item())
+            
+            # Continue generation with new cache (separate from memory)
+            past_kv = outputs.past_key_values
+            current_position = self.global_offset + query_len + 1
+            next_token_input = next_token
+            attention_mask = torch.cat([attention_mask, torch.ones((1, 1), dtype=torch.long, device=first_layer_device)], dim=1)
+            
+            for _ in range(max_new_tokens - 1):
+                if generated_tokens[-1] in eos_token_ids:
+                    break
+                    
+                next_position_ids = torch.tensor([[current_position]], dtype=torch.long, device=first_layer_device)
+                outputs = self.model(
+                    input_ids=next_token_input,
+                    attention_mask=attention_mask,
+                    position_ids=next_position_ids,
+                    past_key_values=past_kv,
+                    use_cache=True
+                )
                 next_token_logits = outputs.logits[:, -1, :].clone()
                 
                 # Repetition penalty
@@ -266,25 +325,22 @@ class MemoryAgent:
                 
                 next_token = next_token_logits.argmax(dim=-1).unsqueeze(-1)
                 generated_tokens.append(next_token.item())
-                
                 next_token_input = next_token
-                next_position_ids = torch.tensor([[current_position]], dtype=torch.long, device=self.primary_device)
-                attention_mask = torch.cat([attention_mask, torch.ones((1, 1), dtype=torch.long, device=self.primary_device)], dim=1)
+                attention_mask = torch.cat([attention_mask, torch.ones((1, 1), dtype=torch.long, device=first_layer_device)], dim=1)
                 current_position += 1
                 past_kv = outputs.past_key_values
-                
-                if next_token.item() in eos_token_ids:
-                    break
         
         # Decode
         response = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
         response = self._remove_thinking_content(response)
         logger.debug(f"Generated response length: {len(response)} chars")
         
-        # Clear temporary cache if agent is inactive
+        # Clean up temporary cache
+        del generation_cache
+        del past_kv
         if not self.is_active and self.merged_cache is not None:
             self.merged_cache = None
-            torch.cuda.empty_cache()
+        torch.cuda.empty_cache()
         
         return response
     
