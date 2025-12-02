@@ -66,9 +66,9 @@ class MemoryAgent:
             block_size=self.block_size
         )
         self.global_offset = 0
-        self.saved_chunks = []
+        self.saved_chunks = []  # Store metadata only
         self.chunk_number = 0
-        self.merged_cache = None  # Cache merged KV for incremental updates
+        self.merged_cache = None  # Single KV cache in GPU memory
     
     def _get_layer_devices(self):
         """Get the device for each transformer layer."""
@@ -130,56 +130,28 @@ class MemoryAgent:
             # Position IDs
             position_ids = torch.arange(self.global_offset, self.global_offset + seq_len, dtype=torch.long, device=self.primary_device).unsqueeze(0)
             
-            # Use cached merged KV or build incrementally
+            # Use cached merged KV (incremental update)
             past_kv = self.merged_cache
-            if past_kv is None and self.saved_chunks:
-                # First time: build from scratch
-                past_kv = DynamicCache()
-                num_layers = len(self.saved_chunks[0]["cache"])
-                for layer_idx in range(num_layers):
-                    target_device = self.layer_devices[layer_idx]
-                    keys, values = [], []
-                    for chunk_info in self.saved_chunks:
-                        k, v = chunk_info["cache"][layer_idx]
-                        keys.append(k.to(target_device))
-                        values.append(v.to(target_device))
-                    past_kv.update(torch.cat(keys, dim=2), torch.cat(values, dim=2), layer_idx)
             
             # Forward pass
             with torch.no_grad():
                 outputs = self.model(input_ids=input_ids, position_ids=position_ids, past_key_values=past_kv, use_cache=True)
             
-            # Extract new cache only, keep on original device
-            full_kv_cache = outputs.past_key_values
-            new_cache_only = []
-            num_layers = len(full_kv_cache)
-            for layer_idx in range(num_layers):
-                k_full, v_full = full_kv_cache[layer_idx]
-                k_new = k_full[:, :, -seq_len:, :]
-                v_new = v_full[:, :, -seq_len:, :]
-                new_cache_only.append((k_new, v_new))
-            
-            # Store chunk
-            self.saved_chunks.append({"cache": new_cache_only, "start": self.global_offset, "length": seq_len})
-            self.global_offset += seq_len
-            
-            # Update merged cache incrementally
+            # Update merged cache incrementally (single copy)
             self.merged_cache = outputs.past_key_values
             
-            # Save to block
-            cache_state = {
-                "global_offset": self.global_offset,
-                "saved_chunks": self.saved_chunks,
-                "chunk_number": self.chunk_number,
-                "model_id": self.model_id
-            }
-            block_full = self.current_block.save_cache(cache_state, seq_len)
+            # Store only metadata (no cache duplication)
+            self.saved_chunks.append({"start": self.global_offset, "length": seq_len})
+            self.global_offset += seq_len
+            
+            # Check if block is full
+            block_full = (self.current_block.block_used + seq_len >= self.block_size)
+            self.current_block.block_used += seq_len
             
             if block_full:
                 logger.info(f"Block {self.current_block.block_id} is full ({self.current_block.block_used}/{self.block_size} tokens)")
                 return True
         
-        # TODO: handle the block full case directly in the add_knowlege function, instead of returning the flag?
         return block_full
     
 
@@ -206,9 +178,21 @@ class MemoryAgent:
         And this is only needed after the agent is no longer in a active state
         """
         summary_instruction = "Summarize all the context information provided above accurately and concisely."
-        self.summary = self._agent_generate(instruction=summary_instruction, max_new_tokens=4096)
+        self.summary = self._agent_generate(instruction=summary_instruction, max_new_tokens=8192)
+        
+        # Save cache to disk and clear from GPU
+        cache_state = {
+            "global_offset": self.global_offset,
+            "saved_chunks": self.saved_chunks,
+            "chunk_number": self.chunk_number,
+            "model_id": self.model_id,
+            "merged_cache": [(k.cpu(), v.cpu()) for k, v in self.merged_cache]
+        }
+        self.current_block.save_cache(cache_state, 0)
+        self.merged_cache = None
+        torch.cuda.empty_cache()
 
-    def _agent_generate(self,max_new_tokens: int=1024, instruction: str=None, question: str=None)-> str:
+    def _agent_generate(self,max_new_tokens: int=8192, instruction: str=None, question: str=None)-> str:
         """
         This is a base function for the agent to generate text
         It can be called by query and _create_summaries functions
@@ -225,19 +209,17 @@ class MemoryAgent:
         
         logger.debug(f"Generating response with max_new_tokens={max_new_tokens}")
         
-        # Use cached merged KV
+        # Use cached merged KV or load from disk
         if self.merged_cache is None:
-            # Fallback: merge from chunks
-            merged_cache = DynamicCache()
-            num_layers = len(self.saved_chunks[0]["cache"])
-            for layer_idx in range(num_layers):
-                target_device = self.layer_devices[layer_idx]
-                keys, values = [], []
-                for chunk_info in self.saved_chunks:
-                    k, v = chunk_info["cache"][layer_idx]
-                    keys.append(k.to(target_device))
-                    values.append(v.to(target_device))
-                merged_cache.update(torch.cat(keys, dim=2), torch.cat(values, dim=2), layer_idx)
+            # Load from disk if agent is inactive
+            cache_state = self.current_block.load_cache()
+            if "merged_cache" in cache_state:
+                merged_cache = DynamicCache()
+                for layer_idx, (k, v) in enumerate(cache_state["merged_cache"]):
+                    target_device = self.layer_devices[layer_idx]
+                    merged_cache.update(k.to(target_device), v.to(target_device), layer_idx)
+            else:
+                raise RuntimeError("No cache available for inactive agent")
         else:
             merged_cache = self.merged_cache
         
@@ -299,6 +281,11 @@ class MemoryAgent:
         response = self._remove_thinking_content(response)
         logger.debug(f"Generated response length: {len(response)} chars")
         
+        # Clear temporary cache if agent is inactive
+        if not self.is_active and self.merged_cache is not None:
+            self.merged_cache = None
+            torch.cuda.empty_cache()
+        
         return response
     
     def _remove_thinking_content(self, response: str) -> str:
@@ -312,7 +299,7 @@ class MemoryAgent:
         
         return cleaned_response
     
-    def query(self, question: str, max_new_tokens: int = 1024) -> str:
+    def query(self, question: str, max_new_tokens: int = 8192) -> str:
         """
         Query using cached knowledge.
         Args:

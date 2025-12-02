@@ -151,7 +151,7 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
             try:
                 # NEVER use auto_save for QA questions
                 # Use higher max_new_tokens to allow tool calling
-                prediction = agent.chat(prompt, auto_save=False, max_new_tokens=2048)
+                prediction = agent.chat(prompt, auto_save=False, max_new_tokens=4096)
                 logger.info(f"Prediction: {prediction}")
                 logger.info(f"Reference: {reference_answer}")
             except Exception as e:

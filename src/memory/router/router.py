@@ -54,7 +54,7 @@ class Router(BaseAgent):
             </summary_list>
             Please provide the indices of the most relevant memory summaries to the query.
         """
-        response = self.generate_response(user_prompt_formatted, max_tokens=512)
+        response = self.generate_response(user_prompt_formatted, max_tokens=4096)
         
         # extract indices from response
         try:
