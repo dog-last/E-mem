@@ -154,9 +154,13 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
                 prediction = agent.chat(prompt, auto_save=False, max_new_tokens=4096)
                 logger.info(f"Prediction: {prediction}")
                 logger.info(f"Reference: {reference_answer}")
+                
+                # Capture queried memory content
+                queried_memory = getattr(agent, 'last_queried_memory', None)
             except Exception as e:
                 logger.error(f"Error answering question: {e}")
                 prediction = "ERROR"
+                queried_memory = None
             
             # Calculate metrics
             metrics = calculate_metrics(prediction, reference_answer)
@@ -169,7 +173,8 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
                 "prediction": prediction,
                 "reference": reference_answer,
                 "category": qa.category,
-                "metrics": metrics
+                "metrics": metrics,
+                "queried_memory": queried_memory
             })
     
     # Aggregate metrics

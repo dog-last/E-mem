@@ -20,6 +20,7 @@ class ChatManager(BaseAgent):
                    offload_folder=None):
         super().__init__(openai_config,system_prompt)
         self.name="chat_manager"
+        self.last_queried_memory = None  # Store last query result
         logger.info(f"Initializing ChatManager with model: {model_id}")
         self.add_mem_tool={
                 "type":"function",
@@ -167,8 +168,11 @@ class ChatManager(BaseAgent):
             logger.info(f"Querying memory: {query}")
             result=self.memory_handler.query_memory(query)
             logger.info(f"Memory query completed, result: {result}")
+            # Store the queried memory for evaluation
+            self.last_queried_memory = result
         except Exception as e:
             logger.error(f"Memory querying failed: {e}", exc_info=True)
+            self.last_queried_memory = None
             return f"[ERROR] Memory querying failed: {e}"
         return result
         
