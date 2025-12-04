@@ -130,6 +130,9 @@ class MemoryHandler:
             
             old_memory = old_memory_future.result()
             new_memory = new_memory_future.result()
+        # Force cleanup after parallel queries
+        import torch
+        torch.cuda.empty_cache()
         logger.debug("Parallel queries completed")
         
         # Handle different cases

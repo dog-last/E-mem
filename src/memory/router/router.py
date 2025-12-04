@@ -95,7 +95,11 @@ class Router(BaseAgent):
             logger.debug("No relevant agents found for query")
             return []
         logger.debug(f"Querying {len(relevant_agents_list)} relevant memory blocks in parallel")
+        # Parallel execution with proper cleanup
         with ThreadPoolExecutor(max_workers=len(relevant_agents_list)) as executor:
             results = list(executor.map(lambda agent: agent.query(user_query), relevant_agents_list))
+        # Force cleanup after parallel queries
+        import torch
+        torch.cuda.empty_cache()
         logger.info(f"Collected {len(results)} results from memory blocks")
         return results

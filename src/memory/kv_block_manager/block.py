@@ -35,11 +35,11 @@ class KVBlock:
             bool: True if the block is full after saving and a new one needs to be created, False otherwise.
         """
         assert isinstance(cache_state, dict), "cache_state must be a dict"
-        assert total_new_token > 0, "total_new_token must be positive"
         for key in cache_state.keys():
-            assert key in ['global_offset','saved_chunks','chunk_number','model_id'],"Unknown key found in the cache_state"
+            assert key in ['global_offset','saved_chunks','chunk_number','model_id','merged_cache'],"Unknown key found in the cache_state"
         torch.save(cache_state, self.store_target)
-        self.block_used += total_new_token
+        if total_new_token > 0:
+            self.block_used += total_new_token
         self.chunk_num=cache_state.get('chunk_number',0)
         if self.is_full():
             return True
@@ -48,7 +48,14 @@ class KVBlock:
 
     def load_cache(self):
         """Load cache state from disk."""
-        return torch.load(self.store_target, weights_only=False)
+        if not os.path.exists(self.store_target):
+            return {}
+        try:
+            cache_state = torch.load(self.store_target, weights_only=False)
+            return cache_state if cache_state else {}
+        except Exception as e:
+            print(f"Error loading cache from {self.store_target}: {e}")
+            return {}
     
     def is_full(self):
         """Check if block is full."""

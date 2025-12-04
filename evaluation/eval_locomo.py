@@ -3,6 +3,7 @@ import argparse
 import json
 import logging
 import os
+import random
 import sys
 from collections import defaultdict
 from datetime import datetime
@@ -124,8 +125,15 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
             
             # Determine reference answer based on category
             if qa.category == 5:
-                # Adversarial question - use adversarial_answer as reference
-                reference_answer = qa.adversarial_answer or qa.answer
+                # Adversarial question
+                # If both answer and adversarial_answer exist, answer is correct, adversarial_answer is wrong
+                # Otherwise, 'Not mentioned' is correct, adversarial_answer is wrong
+                if qa.answer and qa.adversarial_answer:
+                    reference_answer = qa.answer
+                    wrong_answer = qa.adversarial_answer
+                else:
+                    reference_answer = "Not mentioned in the conversation"
+                    wrong_answer = qa.adversarial_answer or "Unknown"
             else:
                 # Other categories use answer field
                 reference_answer = qa.answer
@@ -137,20 +145,61 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
             
             # Build prompt based on category
             if qa.category == 5:
-                # Adversarial question
-                prompt = f"You MUST use query_memory tool to search the conversation history before answering. And the time you provided must be as exact as possible. Vague expression like 'today' or 'tomorrow' are not allowed. Question: {qa.question}. If the information is not found in memory, respond with 'Not mentioned in the conversation'. Provide only the answer."
+                # Adversarial question - randomize answer order
+                answer_tmp = []
+                if random.random() < 0.5:
+                    answer_tmp.append(reference_answer)
+                    answer_tmp.append(wrong_answer)
+                else:
+                    answer_tmp.append(wrong_answer)
+                    answer_tmp.append(reference_answer)
+                
+                prompt = f"""You MUST use query_memory tool to search the conversation history. Try the original question as query at the first time. And if failed, adapt your search strategy based on the question to find the most relevant information.
+
+Question: {qa.question}
+
+Select the correct answer: '{answer_tmp[0]}' or '{answer_tmp[1]}'. Provide ONLY the selected answer without explanation."""
             elif qa.category == 2:
                 # Time-related question
-                prompt = f"You MUST use query_memory tool to search the conversation history for dates and times. And the time you provided must be as exact as possible. Vague expression like 'today' or 'tomorrow' are not allowed. Question: {qa.question}. Provide the shortest possible answer using exact words from the conversation."
+                prompt = f"""You MUST use query_memory tool to search for dates and times. Try the original question as query at the first time. And if failed, adapt your search to effectively find time-related information in the conversation.
+
+Question: {qa.question}
+
+Use DATE of CONVERSATION to answer with an approximate date. Generate the shortest possible answer using words from the conversation. Avoid using subjects. Short answer:"""
+            elif qa.category == 1:
+                # Factual question
+                prompt = f"""You MUST use query_memory tool to search for specific facts and details. Try the original question as query at the first time. And if failed, adapt your search to find factual information in the conversation.
+
+Question: {qa.question}
+
+Use DATE of CONVERSATION to answer with an approximate date. Write an answer in the form of a short phrase. Answer with exact words from the context whenever possible. Short answer:"""
+            elif qa.category == 3:
+                # Reasoning question
+                prompt = f"""You MUST use query_memory tool to search the conversation history. Try the original question as query at the first time. And if fail, adjust your search approach as needed to gather comprehensive information.
+
+Question: {qa.question}
+
+Use DATE of CONVERSATION to answer with an approximate date.Write an answer in the form of a short phrase. Answer with exact words from the context whenever possible. Short answer:"""
+            elif qa.category == 4:
+                # Detailed question
+                prompt = f"""You MUST use query_memory tool to search for detailed information. Try the original question as query at the first time. And if failed, adapt your search to find comprehensive details in the conversation.
+
+Question: {qa.question}
+
+Use DATE of CONVERSATION to answer with an approximate date. Write an answer in the form of a short phrase. Answer with exact words from the context whenever possible. Short answer:"""
             else:
                 # Other categories
-                prompt = f"You MUST use query_memory tool to search the conversation history before answering. And the time you provided must be as exact as possible. Vague expression like 'today' or 'tomorrow' are not allowed. Question: {qa.question}. Provide a short answer using exact words from the conversation whenever possible."
+                prompt = f"""You MUST use query_memory tool to search the conversation history. Try the original question as query at the first time. And if fail, modify your search strategy as needed to find the most relevant information.
+
+Question: {qa.question}
+
+Use DATE of CONVERSATION to answer with an approximate date. Write an answer in the form of a short phrase. Answer with exact words from the context whenever possible. Short answer:"""
             
             logger.info(f"\nQuestion {total_questions} (Category {qa.category}): {qa.question}")
             
             try:
                 # NEVER use auto_save for QA questions
-                # Use higher max_new_tokens to allow tool calling
+                # Use higher max_new_tokens to allow multiple tool calling rounds
                 prediction = agent.chat(prompt, auto_save=False, max_new_tokens=4096)
                 logger.info(f"Prediction: {prediction}")
                 logger.info(f"Reference: {reference_answer}")
@@ -176,6 +225,12 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
                 "metrics": metrics,
                 "queried_memory": queried_memory
             })
+        
+        # Clean up agent after each sample to free GPU memory
+        del agent
+        import torch
+        torch.cuda.empty_cache()
+        logger.info(f"Cleaned up agent for sample {sample_idx}")
     
     # Aggregate metrics
     aggregate_results = aggregate_metrics(all_metrics, all_categories)

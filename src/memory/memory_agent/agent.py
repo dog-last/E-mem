@@ -3,14 +3,18 @@ import re
 import uuid
 from datetime import datetime
 from typing import List
+import threading
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 
 from src.memory.kv_block_manager.block import KVBlock
-from src.utils.prompt import MEMORY_AGENT_SYS_PROMPT
+from src.utils.prompt import MEMORY_AGENT_SYS_PROMPT, SUMMARY_INSTRUCTION
 
 logger = logging.getLogger(__name__)
+
+# Global lock for GPU operations to prevent concurrent cache loading
+_gpu_lock = threading.Lock()
 
 
 class MemoryAgent:
@@ -155,6 +159,9 @@ class MemoryAgent:
                 outputs = self.model(input_ids=input_ids, position_ids=position_ids, past_key_values=past_kv, use_cache=True)
             
             # Update merged cache incrementally (single copy)
+            # Delete old cache first to free memory
+            if past_kv is not None:
+                del past_kv
             self.merged_cache = outputs.past_key_values
             
             # Store only metadata (no cache duplication)
@@ -194,11 +201,13 @@ class MemoryAgent:
         Create summaries of all the stored knowledge chunks.
         And this is only needed after the agent is no longer in a active state
         """
-        summary_instruction = "Summarize all the context information provided above accurately and concisely."
-        self.summary = self._agent_generate(instruction=summary_instruction, max_new_tokens=8192)
+        logger.info("Creating summary for inactive agent")
+        self.summary = self._agent_generate(instruction=SUMMARY_INSTRUCTION, max_new_tokens=8192)
+        logger.info(f"Summary created (length: {len(self.summary)} chars)")
         
         # Save cache to disk BEFORE clearing
         if self.merged_cache is not None:
+            logger.info(f"Saving cache to disk: {len(self.merged_cache)} layers")
             cache_state = {
                 "global_offset": self.global_offset,
                 "saved_chunks": self.saved_chunks,
@@ -207,6 +216,9 @@ class MemoryAgent:
                 "merged_cache": [(k.cpu(), v.cpu()) for k, v in self.merged_cache]
             }
             self.current_block.save_cache(cache_state, 0)
+            logger.info(f"Cache saved to {self.current_block.store_target}")
+        else:
+            logger.error("Cannot save cache: merged_cache is None")
         
         # Clear from GPU
         self.merged_cache = None
@@ -231,29 +243,40 @@ class MemoryAgent:
         
         # Prepare base cache (load from disk if needed)
         base_cache = self.merged_cache
+        cache_loaded_from_disk = False
         if base_cache is None:
-            cache_state = self.current_block.load_cache()
-            if "merged_cache" in cache_state:
-                base_cache = DynamicCache()
-                for layer_idx, (k, v) in enumerate(cache_state["merged_cache"]):
-                    target_device = self.layer_devices.get(layer_idx, self.primary_device)
-                    base_cache.update(k.to(target_device), v.to(target_device), layer_idx)
+            if not self.is_active:
+                # Inactive agent must load from disk
+                cache_state = self.current_block.load_cache()
+                if "merged_cache" in cache_state and cache_state["merged_cache"]:
+                    logger.info(f"Loading cache from disk for inactive agent (block {self.current_block.block_id})")
+                    base_cache = DynamicCache()
+                    for layer_idx, (k, v) in enumerate(cache_state["merged_cache"]):
+                        target_device = self.layer_devices.get(layer_idx, self.primary_device)
+                        base_cache.update(k.to(target_device), v.to(target_device), layer_idx)
+                    cache_loaded_from_disk = True
+                else:
+                    logger.error(f"No cache available for inactive agent (block {self.current_block.block_id})")
+                    logger.error(f"Cache state keys: {cache_state.keys() if cache_state else 'None'}")
+                    raise RuntimeError(f"No cache available for inactive agent. Block may not have been properly saved.")
             else:
-                raise RuntimeError("No cache available for inactive agent")
+                # Active agent with no cache - this shouldn't happen if chunks were added
+                logger.warning("Active agent has no merged_cache but has saved_chunks")
+                raise RuntimeError("Active agent cache inconsistency")
         
-        # CRITICAL: Fork cache to prevent pollution
+        # CRITICAL: Fork cache to prevent pollution (shallow copy for memory efficiency)
         generation_cache = DynamicCache()
         
-        # Copy cache data (handle different transformers versions)
+        # Shallow copy - reuse tensors (they won't be modified during generation)
         for layer_idx in range(len(base_cache)):
             k, v = base_cache[layer_idx]
+            # No .clone() to save memory - tensors are read-only during generation
             generation_cache.update(k, v, layer_idx)
         
-        # CRITICAL: Copy _seen_tokens metadata (otherwise model ignores cache)
+        # Copy _seen_tokens metadata
         if hasattr(base_cache, '_seen_tokens'):
             generation_cache._seen_tokens = base_cache._seen_tokens
         elif len(base_cache) > 0:
-            # Fallback: infer from tensor shape
             generation_cache._seen_tokens = base_cache[0][0].shape[-2]
         
         # Format query
@@ -338,12 +361,18 @@ class MemoryAgent:
         response = self._remove_thinking_content(response)
         logger.debug(f"Generated response length: {len(response)} chars")
         
-        # Clean up temporary cache
-        del generation_cache
-        del past_kv
-        if not self.is_active and self.merged_cache is not None:
-            self.merged_cache = None
+        # Clean up temporary cache immediately
+        if 'generation_cache' in locals():
+            del generation_cache
+        if 'past_kv' in locals():
+            del past_kv
+        # For inactive agents, unload cache from GPU after query
+        if cache_loaded_from_disk and base_cache is not None:
+            logger.debug("Unloading cache from GPU for inactive agent")
+            del base_cache
+        # Aggressive cleanup
         torch.cuda.empty_cache()
+        torch.cuda.synchronize()
         
         return response
     
@@ -368,4 +397,10 @@ class MemoryAgent:
             str: The generated response.
         """
         logger.debug(f"Querying memory agent: {question[:50]}...")
-        return self._agent_generate(max_new_tokens=max_new_tokens, question=question)
+        # Use lock for inactive agents to serialize cache loading
+        if not self.is_active:
+            with _gpu_lock:
+                result = self._agent_generate(max_new_tokens=max_new_tokens, question=question)
+            return result
+        else:
+            return self._agent_generate(max_new_tokens=max_new_tokens, question=question)

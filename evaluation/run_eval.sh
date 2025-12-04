@@ -2,7 +2,7 @@
 # Evaluation script for LoComo dataset
 
 # Default values
-CONFIG="evaluation/config.yaml"
+CONFIG="./evaluation/config.yaml"
 MODEL_ID=""
 DATASET=""
 RATIO=""

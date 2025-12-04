@@ -10,8 +10,51 @@ When user ask you to summarize all the information, you MUST summarize all the p
 - Do not make assumptions beyond what is explicitly stated.
 - Provide as many relevant information as possible.
 ### NOTE when summarizing information ###
-- Summarize all the provided context accurately and concisely.
-- Leave out any uninportant thing, but KEEP ALL the Useful details!
+- Create a comprehensive and detailed summary of all provided context information
+- Organize information by topics, themes, or chronological order with clear headings
+- Preserve all critical details: facts, figures, dates, names, locations, and relationships
+- Include temporal relationships and context of when/where information was mentioned
+- Ensure completeness by covering all major topics and subtopics
+- Use precise language that accurately reflects the original meaning
+- Verify that all information in the summary is directly supported by the source text
+- Create a summary that serves as a complete representation without needing to reference the original
+"""
+
+# Detailed instruction for creating comprehensive summaries
+SUMMARY_INSTRUCTION = """
+Please create a comprehensive and detailed summary of all the context information provided above. Follow these guidelines:
+
+1. STRUCTURE YOUR SUMMARY:
+   - Organize information by topics, themes, or chronological order as appropriate
+   - Use clear headings and subheadings to categorize different types of information
+   - Maintain logical flow between related concepts
+
+2. PRESERVE CRITICAL DETAILS:
+   - Include all specific facts, figures, dates, and technical details
+   - Preserve exact names, locations, and identifiers mentioned in the original text
+   - Retain important relationships between entities, events, or concepts
+   - Keep all cause-and-effect relationships and logical connections
+
+3. CONTEXTUAL INFORMATION:
+   - Maintain the context of when and where information was mentioned
+   - Include temporal relationships (before, after, during) between events
+   - Preserve the source and reliability of information if mentioned
+
+4. COMPLETENESS:
+   - Ensure no important information is omitted
+   - Include both explicit information and reasonable inferences clearly marked as such
+   - Cover all major topics and subtopics present in the original text
+
+5. CLARITY AND PRECISION:
+   - Use precise language that accurately reflects the original meaning
+   - Avoid ambiguity while maintaining conciseness where possible
+   - Define any specialized terminology if necessary for understanding
+
+6. VERIFICATION:
+   - Double-check that all information in the summary is directly supported by the source text
+   - Ensure no new information or interpretations are introduced beyond what's in the original
+
+Create a summary that serves as a complete and accurate representation of all the provided context, enabling someone to understand the full scope of information without needing to reference the original text.
 """
 
 
@@ -40,7 +83,6 @@ NOTE:
 """
 
 # chat agent system prompt
-# TODO: modify this
 CHAT_SYS_PROMPT="""
 You are a helpful assistant. You will be provided with memory storage.
 You must use the memory storage to answer user questions.
@@ -48,6 +90,7 @@ You can use the tools provided to perform operations on the memory storage.
 Tools use note:
 - Query Memory Tool:
     When you see user input, if it is a question, you must use the Query Memory Tool to answer the question. You must base your answer strictly on the information provided by the Query Memory Tool.
+    When querying memory, adapt your search strategy based on the question to find the most relevant information. Feel free to modify your query approach as needed to conduct deep research.
     Whenever you see that you lack of information to answer the question, you must first use this tool to query the memory storage.
     You must extract useful informations from user input, and then use the Add Memory Tool to add these informations to the memory storage. (If user asks you something instead of providing informations, you may not need to store it.
 """

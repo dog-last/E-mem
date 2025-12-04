@@ -43,7 +43,9 @@ class BaseAgent(ABC):
             
             # If no tool calls, return final response
             if not response_message.tool_calls:
-                return response_message.content
+                response_content = response_message.content
+                self.reset()
+                return response_content
             
             # Execute all tool calls in this round
             for tool_call in response_message.tool_calls:
