@@ -90,3 +90,31 @@ def load_locomo_dataset(dataset_path: str) -> List[Sample]:
         samples.append(Sample(qa=qa_list, conversation=conversation))
     
     return samples
+
+
+def load_specific_questions(questions_path: str) -> List[dict]:
+    """Load specific questions from JSON file."""
+    with open(questions_path, 'r', encoding='utf-8') as f:
+        questions = json.load(f)
+    return questions
+
+
+def filter_dataset_by_questions(samples: List[Sample], specific_questions: List[dict]) -> List[Sample]:
+    """Filter dataset to only include specific questions."""
+    # Create a set of question texts to look for
+    question_texts = {q['question'] for q in specific_questions}
+    
+    filtered_samples = []
+    for sample in samples:
+        # Filter QA list to only include specific questions
+        filtered_qa = [qa for qa in sample.qa if qa.question in question_texts]
+        
+        # Only include sample if it has at least one matching question
+        if filtered_qa:
+            filtered_sample = Sample(
+                qa=filtered_qa,
+                conversation=sample.conversation
+            )
+            filtered_samples.append(filtered_sample)
+    
+    return filtered_samples

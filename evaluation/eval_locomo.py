@@ -14,7 +14,7 @@ import yaml
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from evaluation.load_dataset import load_locomo_dataset
+from evaluation.load_dataset import load_locomo_dataset, load_specific_questions, filter_dataset_by_questions
 from evaluation.utils import aggregate_metrics, calculate_metrics
 from src.conversation_manager.chat_handler import ChatManager
 
@@ -61,6 +61,20 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
     logger.info(f"Loading dataset from {dataset_path}")
     samples = load_locomo_dataset(dataset_path)
     logger.info(f"Loaded {len(samples)} samples")
+    
+    # Check if specific questions should be used
+    specific_questions_path = config['evaluation'].get('specific_questions_path')
+    if specific_questions_path:
+        if not os.path.isabs(specific_questions_path):
+            specific_questions_path = os.path.join(Path(__file__).parent, specific_questions_path)
+        
+        logger.info(f"Loading specific questions from {specific_questions_path}")
+        specific_questions = load_specific_questions(specific_questions_path)
+        logger.info(f"Loaded {len(specific_questions)} specific questions")
+        
+        # Filter dataset to only include specific questions
+        samples = filter_dataset_by_questions(samples, specific_questions)
+        logger.info(f"Filtered to {len(samples)} samples with specific questions")
     
     # Apply ratio
     ratio = config['evaluation']['ratio']
@@ -159,27 +173,32 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
 Question: {qa.question}
 
 Select the correct answer: '{answer_tmp[0]}' or '{answer_tmp[1]}'. Provide ONLY the selected answer without explanation."""
-            elif qa.category == 2:
-                # Time-related question
-                prompt = f"""You MUST use query_memory tool to search for dates and times. Try the original question as query at the first time. And if failed, adapt your search to effectively find time-related information in the conversation.
+            elif qa.category == 2:  # Date/Time Questions
+                prompt = f"""For questions that require answering a date or time, strictly adhere to the following two formats. Answer with exact words from the information provided whenever possible:
+    
+    * **Format 1 (Specific Date Found):** Use this format if the information explicitly contains the exact date, or if the date can be precisely pinpointed.
+        [Specific Day] [Full Month Name] [Year]
+        Example: '6 July 2023 ', '2022', '13 August' ,'June 2023'
+    
+    * **Format 2 (Time Period/Event Before Date):** Use this format if the information clearly states an event or time period occurred before a known date, but the precise day is not given. You must extract the time period/event directly from the source.
+        the [Time Period] before [Specific Day] [Full Month Name] [Year]
+        Example: the Tuesday before 20 July 2023
+        Example: the week before 20 July 2023
+        
+    If the question is about a duration, answer in the form of several years, months, or days (e.g., "3 years", "6 months").
 
 Question: {qa.question}
-
-Use DATE of CONVERSATION to answer with an approximate date. Generate the shortest possible answer using words from the conversation. Avoid using subjects. Short answer:"""
-            elif qa.category == 1:
-                # Factual question
-                prompt = f"""You MUST use query_memory tool to search for specific facts and details. Try the original question as query at the first time. And if failed, adapt your search to find factual information in the conversation.
+"""
+            elif qa.category == 1:  # Fact Retrieval/General
+                prompt = f"""You must answer with **concise words or a short phrase**, not a full sentence. 
+                Your answer must be as faithful to the information provided as possible.
+Question: {qa.question}
+                """
+            elif qa.category == 3:  # Analysis/Inference Questions
+                prompt = f"""You must write an answer in the form of **a short phrase**, not a full sentence. The question may require you to **analyze and infer** the answer from the the information provided.
 
 Question: {qa.question}
-
-Use DATE of CONVERSATION to answer with an approximate date. Write an answer in the form of a short phrase. Answer with exact words from the context whenever possible. Short answer:"""
-            elif qa.category == 3:
-                # Reasoning question
-                prompt = f"""You MUST use query_memory tool to search the conversation history. Try the original question as query at the first time. And if fail, adjust your search approach as needed to gather comprehensive information.
-
-Question: {qa.question}
-
-Use DATE of CONVERSATION to answer with an approximate date.Write an answer in the form of a short phrase. Answer with exact words from the context whenever possible. Short answer:"""
+"""
             elif qa.category == 4:
                 # Detailed question
                 prompt = f"""You MUST use query_memory tool to search for detailed information. Try the original question as query at the first time. And if failed, adapt your search to find comprehensive details in the conversation.
