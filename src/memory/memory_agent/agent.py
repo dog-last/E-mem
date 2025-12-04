@@ -27,7 +27,7 @@ class MemoryAgent:
                    offload_folder=None):
         self.model_id = model_id
         self.model_context_window = model_context_window
-        self.block_size = int(model_context_window * 0.9)
+        self.block_size = int(model_context_window * 0.37)
 
         self.summary=None
         
