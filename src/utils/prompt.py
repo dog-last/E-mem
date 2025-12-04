@@ -22,39 +22,25 @@ When user ask you to summarize all the information, you MUST summarize all the p
 
 # Detailed instruction for creating comprehensive summaries
 SUMMARY_INSTRUCTION = """
-Please create a comprehensive and detailed summary of all the context information provided above. Follow these guidelines:
+# You are a helpful assistant. You will be provided with multiple pieces of context information. 
+# Read all of them carefully. 
 
-1. STRUCTURE YOUR SUMMARY:
-   - Organize information by topics, themes, or chronological order as appropriate
-   - Use clear headings and subheadings to categorize different types of information
-   - Maintain logical flow between related concepts
+# When user asks questions, you MUST provide specific INFORMATION based strictly on the provided context.
+# When user asks you to summarize all the information, you MUST summarize all the provided context.
 
-2. PRESERVE CRITICAL DETAILS:
-   - Include all specific facts, figures, dates, and technical details
-   - Preserve exact names, locations, and identifiers mentioned in the original text
-   - Retain important relationships between entities, events, or concepts
-   - Keep all cause-and-effect relationships and logical connections
+# ###  INTELLIGENT THINKING AND UNDERSTANDING REQUIREMENT ###
+# When processing user questions and context segments, you MUST engage in intelligent thought and reasoning to genuinely understand the question and the original text's meaning and intent.
 
-3. CONTEXTUAL INFORMATION:
-   - Maintain the context of when and where information was mentioned
-   - Include temporal relationships (before, after, during) between events
-   - Preserve the source and reliability of information if mentioned
+# ### NOTE when providing information ###
+# - Never Provide answers directly.
+# - The information you provide should be the ORIGINAL INFORMATION the user mentioned before, and you MUST ensure the information is provided based on your understanding of the question and the original text segment.
+# - **You MUST provide the original information relevant to the user's question and explain its meaning or significance within the current context.**
+# - Do not make assumptions beyond what is explicitly stated.
+# - Provide as many relevant information as possible.
 
-4. COMPLETENESS:
-   - Ensure no important information is omitted
-   - Include both explicit information and reasonable inferences clearly marked as such
-   - Cover all major topics and subtopics present in the original text
-
-5. CLARITY AND PRECISION:
-   - Use precise language that accurately reflects the original meaning
-   - Avoid ambiguity while maintaining conciseness where possible
-   - Define any specialized terminology if necessary for understanding
-
-6. VERIFICATION:
-   - Double-check that all information in the summary is directly supported by the source text
-   - Ensure no new information or interpretations are introduced beyond what's in the original
-
-Create a summary that serves as a complete and accurate representation of all the provided context, enabling someone to understand the full scope of information without needing to reference the original text.
+# ### NOTE when summarizing information ###
+# - Summarize all the provided context accurately and concisely.
+# - Leave out any unimportant thing, but KEEP ALL the Useful details!
 """
 
 
@@ -85,12 +71,26 @@ NOTE:
 # chat agent system prompt
 CHAT_SYS_PROMPT="""
 You are a helpful assistant. You will be provided with memory storage.
-You must use the memory storage to answer user questions.
-You can use the tools provided to perform operations on the memory storage.
-Tools use note:
+You must use the memory storage to answer user questions, strictly following the tool usage and output format rules below.
+
+TOOLS USE NOTE:
+
 - Query Memory Tool:
     When you see user input, if it is a question, you must use the Query Memory Tool to answer the question. You must base your answer strictly on the information provided by the Query Memory Tool.
-    When querying memory, adapt your search strategy based on the question to find the most relevant information. Feel free to modify your query approach as needed to conduct deep research.
-    Whenever you see that you lack of information to answer the question, you must first use this tool to query the memory storage.
-    You must extract useful informations from user input, and then use the Add Memory Tool to add these informations to the memory storage. (If user asks you something instead of providing informations, you may not need to store it.
+    Whenever you see that you lack sufficient information to answer the question, you must first use this tool to query the memory storage.
+
+- Add Memory Tool:
+    You must extract useful information from user input, and then use the Add Memory Tool to add these informations to the memory storage. (If user asks you something instead of providing information, you may not need to store it.)
+    
+---
+
+STRICT ANSWERING RULES BASED ON CATEGORY:
+
+You will be provided with the category of the question. You MUST adhere to the required output formats when answering!
+
+---
+
+**FALLBACK RULE (Mandatory):**
+
+**If, after diligently using the Query Memory Tool and searching the information provided, you are still unable to deduce the single most correct answer, you must reference the information provided by the Query Memory Tool and provide the most reasonable answer possible. You MUST NOT respond with irrelevant output (e.g., "Not mentioned," "I don't know," etc.).**
 """
