@@ -174,24 +174,42 @@ Question: {qa.question}
 
 Select the correct answer: '{answer_tmp[0]}' or '{answer_tmp[1]}'. Provide ONLY the selected answer without explanation."""
             elif qa.category == 2:  # Date/Time Questions
-                prompt = f"""For questions that require answering a date or time, strictly adhere to the following two formats. Answer with exact words from the information provided whenever possible:
-    
-    * **Format 1 (Specific Date Found):** Use this format if the information explicitly contains the exact date, or if the date can be precisely pinpointed.
-        [Specific Day] [Full Month Name] [Year]
-        Example: '6 July 2023 ', '2022', '13 August' ,'June 2023'
-    
-    * **Format 2 (Time Period/Event Before Date):** Use this format if the information clearly states an event or time period occurred before a known date, but the precise day is not given. You must extract the time period/event directly from the source.
-        the [Time Period] before [Specific Day] [Full Month Name] [Year]
-        Example: the Tuesday before 20 July 2023
-        Example: the week before 20 July 2023
-        
-    If the question is about a duration, answer in the form of several years, months, or days (e.g., "3 years", "6 months").
+                prompt = f"""You are a precise date extraction and normalization assistant.
+Your task is to answer the question based on the document provided and STRICTLY adhere to the following formatting rules.
 
-Question: {qa.question}
+### STEP 1: ANALYZE AND SELECT FORMAT
+Determine which category the answer falls into and apply the corresponding format.
+
+**CASE A: Specific Calendar Date**
+Use this for exact dates mentioned in the text (e.g., "07/06/2023", "July 6th").
+-> **Format:** [Specific Day] [Full Month Name] [Year]
+-> *Examples:* "6 July 2023", "13 August 2022", "2023"
+
+**CASE B: Relative Date (Time Period/Event Before Date)**
+Use this STRICTLY if the text describes a time period or event occurring *before* a known date.
+-> **Structure:** the [Time Period] before [Date]
+-> **Instruction:** 1. Extract the [Time Period] exactly from the text.
+   2. Normalize the [Date] part to match Case A format ([Day] [Month] [Year]).
+-> **Format:** the [Time Period] before [Specific Day] [Full Month Name] [Year]
+-> *Examples:* - "the Tuesday before 20 July 2023"
+   - "the week before 20 July 2023"
+
+**CASE C: Duration**
+Use this for time spans.
+-> **Format:** [Number] [Unit]
+-> *Examples:* "3 years", "6 months"
+
+### STEP 2: GENERATE OUTPUT
+- **Logic:** First, select the Case (A, B, or C). Then, generate the string.
+- **Constraint:** Output ONLY the final string. NO sentence fragments like "The answer is". NO punctuation at the end.
+
+
+Question:
+{qa.question}
 """
             elif qa.category == 1:  # Fact Retrieval/General
-                prompt = f"""You must answer with **concise words or a short phrase**, not a full sentence. 
-                Your answer must be as faithful to the information provided as possible.
+                prompt = f"""You must answer with CONCISE WORDS OR SHORT PHRASE (HIGHEST PRIORITY), not a full sentence. Your answer must be as faithful to the information provided as possible.
+You must engage in **reasoning and intelligent thought** based on the provided information to truly understand the question and the context segment, ensuring your answer is accurate and deeply grounded in the information.
 Question: {qa.question}
                 """
             elif qa.category == 3:  # Analysis/Inference Questions
