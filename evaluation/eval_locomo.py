@@ -172,44 +172,69 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
 
 Question: {qa.question}
 
+### CRITICAL: STRICT EVIDENCE STANDARD
+1. **Burden of Proof:** You must default to the option representing "Not mentioned" (or similar negative status).
+2. **Explicit Evidence Only:** Only switch to the specific answer if the retrieved text contains **explicit, unambiguous, and direct confirmation** of the fact.
+3. **Zero Inference Tolerance:**
+   * If the information is vague, implied, or requires guessing -> Select "Not mentioned".
+   * If the text talks about a related topic but not the exact specific detail -> Select "Not mentioned".
+   * If you are unsure -> Select "Not mentioned".
+
 Select the correct answer: '{answer_tmp[0]}' or '{answer_tmp[1]}'. Provide ONLY the selected answer without explanation."""
             elif qa.category == 2:  # Date/Time Questions
                 prompt = f"""You are a precise date extraction and normalization assistant.
-Your task is to answer the question based on the document provided and STRICTLY adhere to the following formatting rules.
+Your task is to answer the question based on the document and STRICTLY adhere to the formatting rules below.
 
-### STEP 1: ANALYZE AND SELECT FORMAT
-Determine which category the answer falls into and apply the corresponding format.
+### STEP 1: DETERMINE OUTPUT MODE
+Analyze the `Question` text provided at the bottom.
+1.  **IF the question starts with the word "When" (case-insensitive):**
+    * You MUST use **MODE A (Calendar Date)**.
+2.  **OTHERWISE (for all other questions like "How long", "What duration", etc.):**
+    * You MUST use **MODE B (Duration & Time Ago)**.
 
-**CASE A: Specific Calendar Date**
-Use this for exact dates mentioned in the text (e.g., "07/06/2023", "July 6th").
--> **Format:** [Specific Day] [Full Month Name] [Year]
--> *Examples:* "6 July 2023", "13 August 2022", "2023"
+### STEP 2: APPLY FORMATTING RULES
 
-**CASE B: Relative Date (Time Period/Event Before Date)**
-Use this STRICTLY if the text describes a time period or event occurring *before* a known date.
--> **Structure:** the [Time Period] before [Date]
--> **Instruction:** 1. Extract the [Time Period] exactly from the text.
-   2. Normalize the [Date] part to match Case A format ([Day] [Month] [Year]).
--> **Format:** the [Time Period] before [Specific Day] [Full Month Name] [Year]
--> *Examples:* - "the Tuesday before 20 July 2023"
-   - "the week before 20 July 2023"
+**MODE A: Calendar Date (Standardized)**
+* **Goal:** Extract a specific point in time.
+* **Format Rules:** Convert to `[Day] [Full Month Name] [Year]`.
+* **Allowed Templates:**
+    * Full Date: `[Day] [Full Month Name] [Year]` (e.g., "6 July 2023")
+    * Month/Year: `[Full Month Name] [Year]` (e.g., "June 2023")
+    * Year Only: `[Year]` (e.g., "2023")
 
-**CASE C: Duration**
-Use this for time spans.
--> **Format:** [Number] [Unit]
--> *Examples:* "3 years", "6 months"
+**MODE B: Duration & Time Ago**
+* **Goal:** Extract a time span or relative past interval.
+* **Allowed Templates:**
+    * Standard Duration: `[Number] [Unit]`      (e.g., "3 years", "6 months")
+    * Past Reference:    `[Number] [Unit] ago`  (e.g., "10 years ago", "2 weeks ago")
 
-### STEP 2: GENERATE OUTPUT
-- **Logic:** First, select the Case (A, B, or C). Then, generate the string.
-- **Constraint:** Output ONLY the final string. NO sentence fragments like "The answer is". NO punctuation at the end.
+### STEP 3: CRITICAL CONSTRAINTS
+1.  **ANTI-REFUSAL:** **NEVER** output phrases like "not mentioned", "unknown", "N/A", or "does not say".
+    * If the exact answer is missing, you **MUST infer** the most reasonable date/duration from the context and format it.
+2.  **CLEAN OUTPUT:** Output **ONLY** the final string. No intro text, no punctuation (periods) at the end.
 
-
-Question:
-{qa.question}
+Question: {qa.question}
 """
             elif qa.category == 1:  # Fact Retrieval/General
-                prompt = f"""You must answer with CONCISE WORDS OR SHORT PHRASE (HIGHEST PRIORITY), not a full sentence. Your answer must be as faithful to the information provided as possible.
-You must engage in **reasoning and intelligent thought** based on the provided information to truly understand the question and the context segment, ensuring your answer is accurate and deeply grounded in the information.
+                prompt = f"""Based on the document below, extract the answer to the question.
+
+### CRITICAL: REASONING & SELECTION LOGIC
+1. **Prioritize Single Answer:** Your default behavior should be to identify the **single most accurate and specific** entity that answers the question.
+2. **Strict Multiplicity Threshold:** Only output a comma-separated list if:
+   * The text explicitly lists multiple distinct entities that are **equally valid** answers.
+   * AND omitting one would make the answer factually incomplete based on the text.
+   * If one answer is "primary" and others are "secondary" or "examples," **output ONLY the primary one.**
+3. **Inference:** If a direct answer is not explicit, infer the single most relevant concept.
+
+### CRITICAL: ANTI-REFUSAL POLICY
+* **NEVER** output refusal phrases (e.g., "not mentioned", "unknown", "N/A", "does not say").
+* **ALWAYS** extract the best possible answer.
+
+### FORMATTING CONSTRAINTS
+1. **Format:** Output a **short phrase** (preferred) or a **comma-separated list** (only if strictly necessary).
+2. **Conciseness:** Use **exact words** from the text.
+3. **Clean Output:** Do NOT write sentences.
+
 Question: {qa.question}
                 """
             elif qa.category == 3:  # Analysis/Inference Questions
