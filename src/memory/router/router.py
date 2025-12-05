@@ -94,10 +94,17 @@ class Router(BaseAgent):
         if not relevant_agents_list:
             logger.debug("No relevant agents found for query")
             return []
+        
+        # Pre-load all caches in parallel (disk I/O only, no GPU)
+        logger.debug(f"Pre-loading {len(relevant_agents_list)} caches from disk in parallel")
+        with ThreadPoolExecutor(max_workers=len(relevant_agents_list)) as executor:
+            list(executor.map(lambda agent: agent.preload_cache(), relevant_agents_list))
+        
+        # Now query in parallel (GPU operations limited by semaphore)
         logger.debug(f"Querying {len(relevant_agents_list)} relevant memory blocks in parallel")
-        # Parallel execution with proper cleanup
         with ThreadPoolExecutor(max_workers=len(relevant_agents_list)) as executor:
             results = list(executor.map(lambda agent: agent.query(user_query), relevant_agents_list))
+        
         # Force cleanup after parallel queries
         import torch
         torch.cuda.empty_cache()

@@ -13,8 +13,8 @@ from src.utils.prompt import MEMORY_AGENT_SYS_PROMPT, SUMMARY_INSTRUCTION
 
 logger = logging.getLogger(__name__)
 
-# Global lock for GPU operations to prevent concurrent cache loading
-_gpu_lock = threading.Lock()
+# Semaphore to limit concurrent GPU operations (allow 2 at a time)
+_gpu_semaphore = threading.Semaphore(2)
 
 
 class MemoryAgent:
@@ -241,24 +241,33 @@ class MemoryAgent:
         
         logger.debug(f"Generating response with max_new_tokens={max_new_tokens}")
         
-        # Prepare base cache (load from disk if needed)
+        # Prepare base cache (use pre-loaded or load from disk)
         base_cache = self.merged_cache
         cache_loaded_from_disk = False
         if base_cache is None:
             if not self.is_active:
-                # Inactive agent must load from disk
-                cache_state = self.current_block.load_cache()
-                if "merged_cache" in cache_state and cache_state["merged_cache"]:
-                    logger.info(f"Loading cache from disk for inactive agent (block {self.current_block.block_id})")
+                # Check if cache was pre-loaded to CPU
+                if hasattr(self, '_cpu_cache') and self._cpu_cache is not None:
+                    logger.debug(f"Transferring pre-loaded cache to GPU (block {self.current_block.block_id})")
                     base_cache = DynamicCache()
-                    for layer_idx, (k, v) in enumerate(cache_state["merged_cache"]):
+                    for layer_idx, (k, v) in enumerate(self._cpu_cache):
                         target_device = self.layer_devices.get(layer_idx, self.primary_device)
                         base_cache.update(k.to(target_device), v.to(target_device), layer_idx)
                     cache_loaded_from_disk = True
                 else:
-                    logger.error(f"No cache available for inactive agent (block {self.current_block.block_id})")
-                    logger.error(f"Cache state keys: {cache_state.keys() if cache_state else 'None'}")
-                    raise RuntimeError(f"No cache available for inactive agent. Block may not have been properly saved.")
+                    # Fallback: load from disk (slower path)
+                    cache_state = self.current_block.load_cache()
+                    if "merged_cache" in cache_state and cache_state["merged_cache"]:
+                        logger.info(f"Loading cache from disk for inactive agent (block {self.current_block.block_id})")
+                        base_cache = DynamicCache()
+                        for layer_idx, (k, v) in enumerate(cache_state["merged_cache"]):
+                            target_device = self.layer_devices.get(layer_idx, self.primary_device)
+                            base_cache.update(k.to(target_device), v.to(target_device), layer_idx)
+                        cache_loaded_from_disk = True
+                    else:
+                        logger.error(f"No cache available for inactive agent (block {self.current_block.block_id})")
+                        logger.error(f"Cache state keys: {cache_state.keys() if cache_state else 'None'}")
+                        raise RuntimeError(f"No cache available for inactive agent. Block may not have been properly saved.")
             else:
                 # Active agent with no cache - this shouldn't happen if chunks were added
                 logger.warning("Active agent has no merged_cache but has saved_chunks")
@@ -370,9 +379,11 @@ class MemoryAgent:
         if cache_loaded_from_disk and base_cache is not None:
             logger.debug("Unloading cache from GPU for inactive agent")
             del base_cache
+        # Clear CPU cache reference
+        if hasattr(self, '_cpu_cache'):
+            self._cpu_cache = None
         # Aggressive cleanup
         torch.cuda.empty_cache()
-        torch.cuda.synchronize()
         
         return response
     
@@ -387,6 +398,19 @@ class MemoryAgent:
         
         return cleaned_response
     
+    def preload_cache(self):
+        """Pre-load cache from disk to CPU memory (no GPU involved)."""
+        if self.is_active or self.merged_cache is not None:
+            return  # Already loaded or active
+        
+        cache_state = self.current_block.load_cache()
+        if "merged_cache" in cache_state and cache_state["merged_cache"]:
+            logger.debug(f"Pre-loaded cache to CPU for block {self.current_block.block_id}")
+            # Store in CPU memory, will transfer to GPU during generation
+            self._cpu_cache = cache_state["merged_cache"]
+        else:
+            self._cpu_cache = None
+    
     def query(self, question: str, max_new_tokens: int = 8192) -> str:
         """
         Query using cached knowledge.
@@ -397,9 +421,9 @@ class MemoryAgent:
             str: The generated response.
         """
         logger.debug(f"Querying memory agent: {question[:50]}...")
-        # Use lock for inactive agents to serialize cache loading
+        # Use semaphore to limit concurrent GPU operations
         if not self.is_active:
-            with _gpu_lock:
+            with _gpu_semaphore:
                 result = self._agent_generate(max_new_tokens=max_new_tokens, question=question)
             return result
         else:

@@ -7,35 +7,36 @@ from openai import OpenAI
 from evaluation.utils import calculate_metrics
 
 # Mock memory result (replace with your actual search result)
-MOCK_MEMORY_RESULT = """The memory stored a period of time ago: [1:56 pm on 8 May, 2023] Melanie: Yeah, I painted that lake sunrise last year! It's special to me.  
+MOCK_MEMORY_RESULT = """The memory stored a period of time ago: [Context 25]  
+[1:14 pm on 25 May, 2023] Melanie: ...My kids are so excited about summer break! We're thinking about going camping next month.  
 
-The exact datetime when Melanie painted the sunrise is not explicitly stated in the context. However, she mentions it was "last year" during her conversation on **2023-05-08 1:56:00**. Since the conversation occurred in May 2023, the painting would have been completed in **2022**, but no specific date is provided for the act of painting itself. The context only references the timing relative to her message.
-[Context 72]  
-[1:33 pm on 25 August, 2023] Melanie: Yeah, I made it in pottery class yesterday. I love it! Pottery's so relaxing and creative. Have you tried it yet?  
+[Context 167]  
+[1:51 pm on 15 July, 2023] Melanie: We even went on another camping trip in the forest.  
 
-[Context 141]  
-[12:09 am on 13 September, 2023] Caroline: Melanie, those bowls are amazing! They each have such cool designs. I love that you chose pottery for your art. Painting and drawing have helped me express my feelings and explore my gender identity. Creating art was really important to me during my transition - it helped me understand and accept myself. I'm so grateful.  
+[Context 203]  
+[8:56 pm on 20 July, 2023] Melanie: We always look forward to our family camping trip.  
 
-[Context 161]  
-[10:31 am on 13 October, 2023] Melanie: Yeah, Here's one I did last week. It's inspired by the sunsets. The colors make me feel calm. What have you been up to lately, artistically?  
+**Note:** The specific date for the planned camping trip is not explicitly stated in the context beyond Melanie's mention of "next month" (May 25, 2023). However, the context confirms she mentioned planning to go camping next month on May 25, 2023. Subsequent mentions refer to past or ongoing camping activities but do not specify future dates.
+[Context 192]  
+[6:55 pm on 20 October, 2023] Melanie: ...we just did it yesterday! The kids loved it and it was a nice way to relax after the road trip.  
 
-[Context 163]  
-[10:31 am on 13 October, 2023] Melanie: I painted it because it was calming. I've done an abstract painting too, take a look! I love how art lets us get our emotions out.  
+[Context 194]  
+[6:55 pm on 20 October, 2023] Melanie: ...I love camping trips with my fam...  
 
-[Context 165]  
-[10:31 am on 13 October, 2023] Melanie: I wanted a peaceful blue streaks to show tranquility. Blue calms me, so I wanted the painting to have a serene vibe while still having lots of vibrant colors.  
+[Context 195]  
+[6:55 pm on 20 October, 2023] Melanie: ...What do you love most about camping with your fam?  
 
-[Context 176]  
-[6:55 pm on 20 October, 2023] Melanie: Thanks, Caroline! It's a great time. Nature and quality time, can't beat it!  
+[Context 196]  
+[6:55 pm on 20 October, 2023] Melanie: ...It's a chance to be present and together...  
 
-**Note:** There is no explicit mention of Melanie painting a sunrise in the provided context information. The references to art and painting involve sunsets (e.g., Context 141) or abstract works (Context 163), but not specifically a sunrise.
+**Note:** The provided contexts mention Melanie recently completing a camping trip on **20 October 2023**, but there is no explicit information about her planning a future camping trip. The references are retrospective or general statements about her love for camping, not specific future plans.
 
-The memory stored just now: The question about when Melanie painted a sunrise is not addressed in any of the provided context information. The conversations between Melanie and Caroline focus on topics such as creating homes for children, self-acceptance, and mutual support, but there is no mention of Melanie painting or any related activity. Therefore, no specific datetime or details about this event are available in the provided context.
+The memory stored just now: There is no relevant information in the context about Melanie planning to go camping.
 """
 
 # Test question and reference answer
-TEST_QUESTION = "When did Melanie paint a sunrise?"
-REFERENCE_ANSWER = "2022"
+TEST_QUESTION = "When is Melanie planning on going camping?"
+REFERENCE_ANSWER = "June 2023"
 
 # OpenAI config
 OPENAI_CONFIG = {
@@ -140,7 +141,7 @@ You will be provided with the category of the question. You MUST adhere to the r
 
 # Define different prompt templates to test (from eval_locomo.py category 2)
 PROMPTS = {
-    "current_eval": """You are a precise date extraction and normalization assistant.
+    "current": """You are a precise date extraction and normalization assistant.
 Your task is to answer the question based on the document provided and STRICTLY adhere to the following formatting rules.
 
 ### STEP 1: ANALYZE AND SELECT FORMAT
@@ -171,7 +172,95 @@ Use this for time spans.
 
 
 Question:
-{question}"""
+{question}""",
+"test1":"""
+You are a precise date extraction and normalization assistant.
+Your task is to answer the question based on the document and STRICTLY adhere to the formatting rules below.
+
+### STEP 1: CATEGORIZE AND NORMALIZE
+Determine the category of the answer and apply the corresponding Template.
+
+**CASE A: Specific Calendar Date**
+Use this when the answer is a fixed point in time.
+* **Rule:** Convert dates to `[Day] [Full Month Name] [Year]` format explicitly.
+* **Exception:** If the text *only* provides a Year or Month+Year, output exactly that without making up a day.
+* **Templates:**
+    * Full Date: `[Day] [Full Month Name] [Year]` (e.g., "6 July 2023")
+    * Month/Year: `[Full Month Name] [Year]` (e.g., "June 2023")
+    * Year Only: `[Year]` (e.g., "2023")
+
+**CASE B: Relative Date (Strict "Before" Format)**
+Use this STRICTLY when the answer is a specific day/week relative to a later date.
+* **Structure:** `the [Unit] before [Reference Date]`
+* **STRICT CONSTRAINT:** The `[Unit]` slot MUST be exactly one of the **Allowed Units** (week, weekend, day, Monday...Sunday). *Do not use "year", "months", etc.*
+* **Action:**
+    1.  Extract the **Unit** (e.g., "week", "Tuesday").
+    2.  Normalize the **Reference Date** to Format 1 style (`[Day] [Full Month Name] [Year]`).
+    3.  Combine strictly.
+* **Template:** `the [Unit] before [Day] [Full Month Name] [Year]`
+* **Examples:**
+    * "The Tuesday prior to 07/20/2023" -> "the Tuesday before 20 July 2023"
+    * "a week before July 20th, 2023" -> "the week before 20 July 2023"
+    * "the day before Christmas 2023" -> "the day before 25 December 2023"
+
+**CASE C: Duration**
+Use this for time spans.
+* **Template:** `[Number] [Unit]`
+* **Examples:** "3 years", "6 months"
+
+### STEP 2: GENERATE OUTPUT
+* Output **ONLY** the final string based on the templates above.
+* **NO** trailing punctuation (no periods).
+* **NO** intro text (e.g., "The answer is").
+
+Question: {question}
+""",
+"test3":"""
+You are a precise date extraction and normalization assistant.
+Your task is to answer the question based on the document and STRICTLY adhere to the formatting rules below.
+
+### CRITICAL INSTRUCTION: STRICT FORMAT ONLY
+**You must ONLY output a string that matches Case A, Case B, or Case C.**
+**NEVER** output phrases like "not mentioned", "not specified", "unknown", "N/A", "no date found", or "does not say". Even if the answer is difficult to find, you must infer the most likely date or duration and format it.
+
+### STEP 1: CATEGORIZE AND NORMALIZE
+Determine the category of the answer and apply the corresponding Template.
+
+**CASE A: Specific Calendar Date**
+Use this when the answer is a fixed point in time.
+* **Rule:** Convert dates to `[Day] [Full Month Name] [Year]` format explicitly.
+* **Exception:** If the text *only* provides a Year or Month+Year, output exactly that without making up a day.
+* **Templates:**
+    * Full Date: `[Day] [Full Month Name] [Year]` (e.g., "6 July 2023")
+    * Month/Year: `[Full Month Name] [Year]` (e.g., "June 2023")
+    * Year Only: `[Year]` (e.g., "2023")
+
+**CASE B: Relative Date (Strict "Before" Format)**
+Use this STRICTLY when the answer is a specific day/week relative to a later date.
+* **Structure:** `the [Unit] before [Reference Date]`
+* **STRICT CONSTRAINT:** The `[Unit]` slot MUST be exactly one of the **Allowed Units** (week, weekend, day, Monday...Sunday). *Do not use "year", "months", etc.*
+* **Action:**
+    1.  Extract the **Unit** (e.g., "week", "Tuesday").
+    2.  Normalize the **Reference Date** to Format 1 style (`[Day] [Full Month Name] [Year]`).
+    3.  Combine strictly.
+* **Template:** `the [Unit] before [Day] [Full Month Name] [Year]`
+* **Examples:**
+    * "The Tuesday prior to 07/20/2023" -> "the Tuesday before 20 July 2023"
+    * "a week before July 20th, 2023" -> "the week before 20 July 2023"
+    * "the day before Christmas 2023" -> "the day before 25 December 2023"
+
+**CASE C: Duration**
+Use this for time spans.
+* **Template:** `[Number] [Unit]`
+* **Examples:** "3 years", "6 months"
+
+### STEP 2: GENERATE OUTPUT
+* **Constraint 1:** Output **ONLY** the final string.
+* **Constraint 2:** **NO** intro text (e.g., "The answer is") and **NO** punctuation (periods) at the end.
+* **Constraint 3 (Anti-Refusal):** If you cannot find a perfect match, output the closest possible date or duration entity found in the text. **DO NOT** output "not mentioned".
+
+Question: {question}
+"""
 }
 
 def main():

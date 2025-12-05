@@ -116,7 +116,11 @@ class ChatManager(BaseAgent):
         <user_input>{user_input}</user_input>
         """
         
-        response=self.generate_response(user_prompt_formatted,tools=tools,max_tokens=max_new_tokens,max_tool_rounds=2)
+        try:
+            response=self.generate_response(user_prompt_formatted,tools=tools,max_tokens=max_new_tokens,max_tool_rounds=1)
+        except RuntimeError as e:
+            logger.error(f"RuntimeError in generate_response: {e}", exc_info=True)
+            return f"Not mentioned in the conversation."
         return response
 
 
