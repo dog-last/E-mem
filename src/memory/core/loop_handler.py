@@ -15,7 +15,8 @@ class AddHandler:
                    device_map: str = "auto", 
                    quantization_config=None,
                    max_memory=None,
-                   offload_folder=None):
+                   offload_folder=None,
+                   overlap_ratio: float = 0.1):
         self.model_id=model_id
         self.model_context_window=model_context_window
         self.attn_implementation=attn_implementation
@@ -23,7 +24,9 @@ class AddHandler:
         self.quantization_config=quantization_config
         self.max_memory=max_memory
         self.offload_folder=offload_folder
+        self.overlap_ratio=overlap_ratio
         self.active_memory_agent=None
+        self.overlap_buffer=[]  # Store recent memories for overlap
     
     def create_agent(self):
         logger.info("Creating new memory agent")
@@ -46,12 +49,33 @@ class AddHandler:
         """
         if self.active_memory_agent is None:
             self.create_agent()
+        
         logger.debug(f"Adding text to memory agent: {text[:50]}...")
         self.active_memory_agent.add([text])
+        
+        # Add to overlap buffer
+        self.overlap_buffer.append(text)
+        
+        # Calculate overlap size based on block size
+        overlap_size = int(self.active_memory_agent.block_size * self.overlap_ratio)
+        
+        # Keep only recent memories for overlap (estimate ~100 tokens per memory)
+        max_buffer_items = max(5, overlap_size // 100)
+        if len(self.overlap_buffer) > max_buffer_items:
+            self.overlap_buffer = self.overlap_buffer[-max_buffer_items:]
+        
         is_active = self.active_memory_agent.is_active
         if not is_active:
-            logger.info("Memory agent became full")
+            logger.info(f"Memory agent became full, overlap buffer size: {len(self.overlap_buffer)}")
         return is_active
+    
+    def get_overlap_memories(self) -> list:
+        """Get memories for overlap with next block."""
+        return self.overlap_buffer.copy()
+    
+    def clear_overlap_buffer(self):
+        """Clear overlap buffer after creating new agent."""
+        self.overlap_buffer = []
     
     def query_new_agent(self, query: str)->str:
         if self.active_memory_agent is None:
@@ -87,9 +111,10 @@ class MemoryHandler:
                    router_system_prompt: str = None,
                    quantization_config=None,
                    max_memory=None,
-                   offload_folder=None):
-        logger.info(f"Initializing MemoryHandler with model: {model_id}")
-        self.add_handler=AddHandler(model_id,model_context_window,attn_implementation,device_map,quantization_config,max_memory,offload_folder)
+                   offload_folder=None,
+                   overlap_ratio: float = 0.1):
+        logger.info(f"Initializing MemoryHandler with model: {model_id}, overlap_ratio: {overlap_ratio}")
+        self.add_handler=AddHandler(model_id,model_context_window,attn_implementation,device_map,quantization_config,max_memory,offload_folder,overlap_ratio)
         self.inactive_memory_agents = []
         if router_system_prompt is None:
             self.query_handler=QueryHandler(Router(openai_config=openai_config))
@@ -107,13 +132,28 @@ class MemoryHandler:
         """
         is_active = self.add_handler.add_memory(text)
         if not is_active:
-            # Agent became full, move to inactive and create new one
+            # Agent became full, move to inactive and create new one with overlap
             logger.info("Moving full memory agent to inactive pool")
             self.inactive_memory_agents.append(self.add_handler.active_memory_agent)
             self.query_handler.router.add_blocks(self.add_handler.active_memory_agent)
             logger.info(f"Total inactive agents: {len(self.inactive_memory_agents)}")
+            
+            # Get overlap memories before clearing
+            overlap_memories = self.add_handler.get_overlap_memories()
+            logger.info(f"Creating new agent with {len(overlap_memories)} overlap memories")
+            
+            # Create new agent
             self.add_handler.active_memory_agent = None
             self.add_handler.create_agent()
+            
+            # Add overlap memories to new agent
+            if overlap_memories:
+                for mem in overlap_memories:
+                    self.add_handler.active_memory_agent.add([mem])
+                logger.info(f"Added {len(overlap_memories)} overlap memories to new agent")
+            
+            # Clear overlap buffer
+            self.add_handler.clear_overlap_buffer()
 
     def query_memory(self, user_query: str) -> str:
         """

@@ -79,6 +79,8 @@ class ChatManager(BaseAgent):
         if offload_folder is not None:
             memory_kwargs["offload_folder"] = offload_folder
         
+        # Add overlap_ratio to memory_kwargs (default 10% overlap)
+        memory_kwargs["overlap_ratio"] = 0.1
         self.memory_handler = MemoryHandler(**memory_kwargs)
         
     def chat(self,user_input:str,outer_tools=None,
