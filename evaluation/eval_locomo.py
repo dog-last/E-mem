@@ -17,6 +17,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from evaluation.load_dataset import load_locomo_dataset, load_specific_questions, filter_dataset_by_questions
 from evaluation.utils import aggregate_metrics, calculate_metrics
 from src.conversation_manager.chat_handler import ChatManager
+from evaluation.utils import extract_answer_from_xml
 
 
 def setup_logger(log_file: str) -> logging.Logger:
@@ -216,29 +217,33 @@ Analyze the `Question` text provided at the bottom.
 Question: {qa.question}
 """
             elif qa.category == 1:  # Fact Retrieval/General
-                prompt = f"""Based on the document below, extract the answer to the question.
+                prompt = f"""Based on the text below, write an answer in the form of **a short phrase** for the following question, not a sentence. Answer with exact words from the context whenever possible.
 
-### CRITICAL: REASONING & SELECTION LOGIC
-1. **Prioritize Single Answer:** Your default behavior should be to identify the **single most accurate and specific** entity that answers the question.
-2. **Strict Multiplicity Threshold:** Only output a comma-separated list if:
-   * The text explicitly lists multiple distinct entities that are **equally valid** answers.
-   * AND omitting one would make the answer factually incomplete based on the text.
-   * If one answer is "primary" and others are "secondary" or "examples," **output ONLY the primary one.**
-3. **Inference:** If a direct answer is not explicit, infer the single most relevant concept.
+### PROCESS
+1. **Analyze (Thinking):** First, scan the text to locate the specific sentence containing the answer. If the exact answer is missing, identify the most relevant proxy concept.
+2. **Extract (Final Output):** Output ONLY the specific entity or short phrase found in the text.
 
-### CRITICAL: ANTI-REFUSAL POLICY
-* **NEVER** output refusal phrases (e.g., "not mentioned", "unknown", "N/A", "does not say").
-* **ALWAYS** extract the best possible answer.
-
-### FORMATTING CONSTRAINTS
-1. **Format:** Output a **short phrase** (preferred) or a **comma-separated list** (only if strictly necessary).
-2. **Conciseness:** Use **exact words** from the text.
-3. **Clean Output:** Do NOT write sentences.
+### CRITICAL CONSTRAINTS
+* **Anti-Refusal:** NEVER say "not mentioned". You MUST output the best possible guess or closest relevant entity from the text.
+* **OUTPUT:** The final OUTPUT must be a **single word** or **short phrase** (under 10 words). NO sentences.
 
 Question: {qa.question}
                 """
             elif qa.category == 3:  # Analysis/Inference Questions
-                prompt = f"""You must write an answer in the form of **a short phrase**, not a full sentence. The question may require you to **analyze and infer** the answer from the the information provided.
+                prompt = f"""Based on the text below, write an answer in the form of **a short phrase** for the following question, not a sentence.
+### CRITICAL: CONDITIONAL FORMATTING
+1. **"Would" Questions:**
+   * **Case A (Selection):** If the question asks to choose between options (often containing "or", e.g., "Would X or Y happen?"), output the **specific option** selected.
+     * *Example:* "Would he use Python or Java?" -> "Python"
+   * **Case B (Prediction/Judgment):** If the question asks for a yes/no prediction or feasibility, your answer **MUST** start with **"Likely yes"** or **"Likely no"**.
+     * *Example:* "Would this be accepted?" -> "Likely yes, due to..."
+2. **Other Questions:**
+   * Output a **short phrase**.
+   * Do NOT use full sentences.
+
+### CRITICAL: ANTI-REFUSAL POLICY
+* **NEVER** output refusal phrases.
+* **ALWAYS** infer the best possible answer based on available evidence.
 
 Question: {qa.question}
 """
@@ -263,7 +268,11 @@ Use DATE of CONVERSATION to answer with an approximate date. Write an answer in 
                 # NEVER use auto_save for QA questions
                 # Use higher max_new_tokens to allow multiple tool calling rounds
                 prediction = agent.chat(prompt, auto_save=False, max_new_tokens=4096)
-                logger.info(f"Prediction: {prediction}")
+                logger.info(f"Raw prediction: {prediction}")
+                
+                # Extract answer from XML tags for category 1 questions
+                processed_prediction = extract_answer_from_xml(prediction, qa.category)
+                logger.info(f"Processed prediction: {processed_prediction}")
                 logger.info(f"Reference: {reference_answer}")
                 
                 # Capture queried memory content
@@ -271,17 +280,19 @@ Use DATE of CONVERSATION to answer with an approximate date. Write an answer in 
             except Exception as e:
                 logger.error(f"Error answering question: {e}")
                 prediction = "ERROR"
+                processed_prediction = "ERROR"
                 queried_memory = None
             
-            # Calculate metrics
-            metrics = calculate_metrics(prediction, reference_answer)
+            # Calculate metrics using the processed prediction
+            metrics = calculate_metrics(processed_prediction, reference_answer)
             all_metrics.append(metrics)
             all_categories.append(qa.category)
             
             results.append({
                 "sample_id": sample_idx,
                 "question": qa.question,
-                "prediction": prediction,
+                "prediction": prediction,  # Store raw prediction
+                "processed_prediction": processed_prediction,  # Store processed prediction
                 "reference": reference_answer,
                 "category": qa.category,
                 "metrics": metrics,

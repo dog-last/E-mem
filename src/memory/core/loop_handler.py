@@ -74,7 +74,8 @@ class QueryHandler:
             logger.debug("No relevant memory found in inactive blocks")
             return "No relevant memory found."
         logger.info(f"Found {len(res)} relevant memory blocks")
-        return "\n".join(res)
+        formatted_res="\n".join([f"Old Memory Block {i+1}: {r}" for i,r in enumerate(res)]) # Better format this to avoid mixing together
+        return formatted_res
         
 
 class MemoryHandler:
@@ -146,4 +147,4 @@ class MemoryHandler:
         elif not has_new:
             return old_memory
         else:
-            return f"The memory stored a period of time ago: {old_memory}\n\nThe memory stored just now: {new_memory}"
+            return f"The memory stored a period of time ago: {old_memory}\n\nThe memory stored just now:\n New Memory Block 1: {new_memory}"

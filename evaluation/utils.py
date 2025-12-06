@@ -9,6 +9,7 @@ from nltk.translate.meteor_score import meteor_score
 from rouge_score import rouge_scorer
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import pytorch_cos_sim
+import re
 
 # Download required NLTK data
 try:
@@ -29,9 +30,32 @@ def get_sentence_model():
     return sentence_model
 
 
+def extract_answer_from_xml(text: str, category: int) -> str:
+    """Extract answer from XML tags for category 1 questions.
+    
+    Args:
+        text: The raw text from the model
+        category: The question category
+        
+    Returns:
+        The extracted answer or the original text if no XML tags found
+    """
+    if category != 1:
+        return text
+    
+    # Try to extract content between <answer> tags
+    match = re.search(r'<answer>(.*?)</answer>', text, re.DOTALL)
+    if match:
+        return match.group(1).strip()    
+    # If no <answer> tags found, return the original text
+    return text
+
+
 def normalize_answer(s: Union[str, int, float]) -> str:
     """Normalize answer string."""
     s = str(s).lower()
+    # Remove punctuation (commas, periods, question marks, exclamation marks, etc.)
+    s = re.sub(r'[^\w\s]', '', s)
     s = re.sub(r'\b(a|an|the)\b', ' ', s)
     s = re.sub(r'\s+', ' ', s)
     return s.strip()
@@ -90,7 +114,7 @@ def calculate_metrics(prediction: Union[str, int, float], reference: Union[str, 
     # model = get_sentence_model()
     # ref_emb = model.encode(str(reference), convert_to_tensor=True)
     # pred_emb = model.encode(str(prediction), convert_to_tensor=True)
-    similarity = 1.00
+    # similarity = pytorch_cos_sim(ref_emb, pred_emb).item()
     
     return {
         "exact_match": exact_match,
@@ -103,7 +127,7 @@ def calculate_metrics(prediction: Union[str, int, float], reference: Union[str, 
         "bleu3": bleu3,
         "bleu4": bleu4,
         "meteor": meteor,
-        "sbert_similarity": similarity
+        # "sbert_similarity": similarity
     }
 
 

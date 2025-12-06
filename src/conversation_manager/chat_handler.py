@@ -2,7 +2,7 @@ import logging
 
 from src.agent.base import BaseAgent
 from src.memory.core.loop_handler import MemoryHandler
-from src.utils.prompt import CHAT_SYS_PROMPT
+from src.utils.prompt import CHAT_SYS_PROMPT, AGGREGATOR_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -170,13 +170,43 @@ class ChatManager(BaseAgent):
             return "[ERROR] No query content provided."
         try:
             logger.info(f"Querying memory: {query}")
-            result=self.memory_handler.query_memory(query)
-            logger.info(f"Memory query completed, result: {result}")
-            # Store the queried memory for evaluation
-            self.last_queried_memory = result
+            raw_result=self.memory_handler.query_memory(query)
+            logger.info(f"Raw memory query result length: {len(raw_result)} chars")
+            logger.info(f"Memory query result: {raw_result}")
+            
+            # Aggregate results using LLM
+            aggregated_result = self._aggregate_memory_results(query, raw_result)
+            logger.info(f"Memory query aggregated, result length: {len(aggregated_result)} chars")
+            logger.info(f"Memory query result: {aggregated_result}")
+            
+            # Store the aggregated memory for evaluation
+            self.last_queried_memory = aggregated_result
         except Exception as e:
             logger.error(f"Memory querying failed: {e}", exc_info=True)
             self.last_queried_memory = None
             return f"[ERROR] Memory querying failed: {e}"
-        return result
+        return aggregated_result
+    
+    def _aggregate_memory_results(self, query: str, raw_results: str) -> str:
+        """
+        Aggregate and summarize mixed query results.
+        Args:
+            query (str): The original query.
+            raw_results (str): Raw results from memory blocks.
+        Returns:
+            str: Aggregated and simplified results.
+        """
+        prompt = AGGREGATOR_PROMPT.format(query=query, results=raw_results)
+        
+        try:
+            response = self.llm.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=2048,
+                temperature=0.3
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.error(f"Aggregation failed: {e}", exc_info=True)
+            return raw_results  # Fallback to raw results
         
