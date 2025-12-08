@@ -249,11 +249,17 @@ Question: {qa.question}
 """
             elif qa.category == 4:
                 # Detailed question
-                prompt = f"""You MUST use query_memory tool to search for detailed information. Try the original question as query at the first time. And if failed, adapt your search to find comprehensive details in the conversation.
+                prompt = f"""Based on the text below, write an answer in the form of **a short phrase** for the following question, not a sentence. Answer with exact words from the context whenever possible.
 
-Question: {qa.question}
+### PROCESS
+1. **Analyze (Thinking):** First, scan the text to locate the specific sentence containing the answer. If the exact answer is missing, identify the most relevant proxy concept.
+2. **Extract (Final Output):** Output ONLY the specific entity or short phrase found in the text.
 
-Use DATE of CONVERSATION to answer with an approximate date. Write an answer in the form of a short phrase. Answer with exact words from the context whenever possible. Short answer:"""
+### CRITICAL CONSTRAINTS
+* **Anti-Refusal:** NEVER say "not mentioned". You MUST output the best possible guess or closest relevant entity from the text.
+* **OUTPUT:** The final OUTPUT must be a **single word** or **short phrase** (under 10 words). NO sentences.
+
+Question: {qa.question}"""
             else:
                 # Other categories
                 prompt = f"""You MUST use query_memory tool to search the conversation history. Try the original question as query at the first time. And if fail, modify your search strategy as needed to find the most relevant information.
