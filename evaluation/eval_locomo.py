@@ -14,10 +14,17 @@ import yaml
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from evaluation.load_dataset import load_locomo_dataset, load_specific_questions, filter_dataset_by_questions
-from evaluation.utils import aggregate_metrics, calculate_metrics
+from evaluation.load_dataset import (
+    filter_dataset_by_questions,
+    load_locomo_dataset,
+    load_specific_questions,
+)
+from evaluation.utils import (
+    aggregate_metrics,
+    calculate_metrics,
+    extract_answer_from_xml,
+)
 from src.conversation_manager.chat_handler import ChatManager
-from evaluation.utils import extract_answer_from_xml
 
 
 def setup_logger(log_file: str) -> logging.Logger:
@@ -116,7 +123,7 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
         for session_key, session in sample.conversation.sessions.items():
             for turn in session.turns:
                 if conversation_auto_save:
-                    memory_text = f"[{session.date_time}] {turn.speaker}: {turn.text}"
+                    memory_text = f"[{session.date_time}] {turn.speaker}: {turn.text}\n"
                 else:
                     memory_text = f"YOU MUST use add_memory tool to store the extracted information from the following text WITH EXACTTIME(**MUST STORE THE TIME IN THE FORMAT OF 'YYYY-MM-DD HH:MM:SS'**) and speaker.[{session.date_time}] {turn.speaker}: {turn.text}"
                 
@@ -217,15 +224,16 @@ Analyze the `Question` text provided at the bottom.
 Question: {qa.question}
 """
             elif qa.category == 1:  # Fact Retrieval/General
-                prompt = f"""Based on the text below, write an answer in the form of **a short phrase** for the following question, not a sentence. Answer with exact words from the context whenever possible.
+                prompt = f"""Based on the text below, analyze the context to provide the best answer to the question.
 
 ### PROCESS
-1. **Analyze (Thinking):** First, scan the text to locate the specific sentence containing the answer. If the exact answer is missing, identify the most relevant proxy concept.
-2. **Extract (Final Output):** Output ONLY the specific entity or short phrase found in the text.
+1. **Analyze (Reasoning):** Deeply analyze the text to understand the specific details and implied facts related to the question.
+2. **Synthesize (Output):** Construct an answer based on your analysis. Use the **terminology and content from the text** to formulate a precise answer.
 
 ### CRITICAL CONSTRAINTS
-* **Anti-Refusal:** NEVER say "not mentioned". You MUST output the best possible guess or closest relevant entity from the text.
-* **OUTPUT:** The final OUTPUT must be a **single word** or **short phrase** (under 10 words). NO sentences.
+* **Strict Relevance:** **NEVER** output content unrelated to the question. Focus ONLY on the specific details requested.
+* **Anti-Refusal:** **NEVER** say "not mentioned". Even if the answer is not explicitly stated, you **MUST** infer the **most probable answer** based on the provided evidence.
+* **Format:** The final OUTPUT must be a **short phrase** (under 10 words). NO sentences.
 
 Question: {qa.question}
                 """
@@ -250,10 +258,7 @@ Question: {qa.question}
             elif qa.category == 4:
                 # Detailed question
                 prompt = f"""Based on the text below, write an answer in the form of **a short phrase** for the following question, not a sentence. Answer with exact words from the context whenever possible.
-
-### PROCESS
-1. **Analyze (Thinking):** First, scan the text to locate the specific sentence containing the answer. If the exact answer is missing, identify the most relevant proxy concept.
-2. **Extract (Final Output):** Output ONLY the specific entity or short phrase found in the text.
+ Extract (Final Output): Output ONLY the specific entity or short phrase found in the text.
 
 ### CRITICAL CONSTRAINTS
 * **Anti-Refusal:** NEVER say "not mentioned". You MUST output the best possible guess or closest relevant entity from the text.

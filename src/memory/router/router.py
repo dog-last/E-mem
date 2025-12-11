@@ -1,4 +1,5 @@
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import List
 
@@ -56,26 +57,36 @@ class Router(BaseAgent):
         """
         response = self.generate_response(user_prompt_formatted, max_tokens=4096)
         
-        # extract indices from response
+        # Extract indices using robust regex
         try:
-            # use regex to find the content between <summary_index> and </summary_index>
-            import re
-            match = re.search(r'<summary_index>(.*?)</summary_index>', response, re.DOTALL)
+            # Match <summary_index>...</summary_index> - capture anything inside
+            match = re.search(r'<summary_index>\s*(.*?)\s*</summary_index>', response, re.DOTALL | re.IGNORECASE)
             if match:
-                indices_str = match.group(1).strip()
-                indices = [int(idx.strip()) for idx in indices_str.split(',') if idx.strip().isdigit()]
-                # Restrict the total number of indices to max_blocks
-                indices = indices[:max_blocks]
-                selected_agents = [self.agent[idx] for idx in indices if 0 <= idx < len(self.agent)]
-                logger.info(f"Mapped query to {len(selected_agents)} memory blocks")
-                logger.debug(f"Selected block indices: {indices}")
+                indices_str = match.group(1)
+                # Extract all integers
+                indices = [int(num) for num in re.findall(r'\d+', indices_str)]
+                
+                # Deduplicate while preserving order
+                seen = set()
+                unique_indices = []
+                for idx in indices:
+                    if idx not in seen:
+                        seen.add(idx)
+                        unique_indices.append(idx)
+                
+                # Filter valid indices first, then limit to max_blocks
+                valid_indices = [idx for idx in unique_indices if 0 <= idx < len(self.agent)]
+                selected_indices = valid_indices[:max_blocks]
+                selected_agents = [self.agent[idx] for idx in selected_indices]
+                
+                logger.info(f"Mapped query to {len(selected_agents)} memory blocks (indices: {selected_indices})")
                 return selected_agents
             else:
-                logger.warning("No summary_index found in router response")
-                return []
+                logger.warning(f"No summary_index tag found, using all blocks. Response: {response[:200]}")
+                return self.agent[:max_blocks]
         except Exception as e:
-            logger.error(f"Error parsing router response: {e}", exc_info=True)
-            return []
+            logger.error(f"Error parsing router response: {e}, using all blocks", exc_info=True)
+            return self.agent[:max_blocks]
         
     
     def execute_tool(self, tool_name, arguments):
