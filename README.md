@@ -71,7 +71,10 @@ MemoryHandler (Orchestrator)
 ## 🚀 Installation
 
 ```bash
-# Install dependencies
+# Install dependencies with uv
+uv sync
+
+# Or with pip
 pip install -r requirements.txt
 
 # Setup configuration
