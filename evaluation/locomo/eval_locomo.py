@@ -62,7 +62,7 @@ def setup_logger(log_file: str) -> logging.Logger:
 def evaluate_dataset(config: dict, logger: logging.Logger):
     """Evaluate on LoComo dataset."""
     # Load dataset
-    dataset_path = config['evaluation']['dataset_path']
+    dataset_path = config['locomo_eval']['dataset_path']
     if not os.path.isabs(dataset_path):
         # Path is relative to project root, not to this file
         project_root = Path(__file__).parent.parent.parent
@@ -73,7 +73,7 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
     logger.info(f"Loaded {len(samples)} samples")
     
     # Check if specific questions should be used
-    specific_questions_path = config['evaluation'].get('specific_questions_path')
+    specific_questions_path = config['locomo_eval'].get('specific_questions_path')
     if specific_questions_path:
         if not os.path.isabs(specific_questions_path):
             project_root = Path(__file__).parent.parent.parent
@@ -88,7 +88,7 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
         logger.info(f"Filtered to {len(samples)} samples with specific questions")
     
     # Apply ratio
-    ratio = config['evaluation']['ratio']
+    ratio = config['locomo_eval']['ratio']
     if ratio < 1.0:
         num_samples = max(1, int(len(samples) * ratio))
         samples = samples[:num_samples]
@@ -123,7 +123,7 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
         
         # Store conversations
         logger.info("\n--- Storing Conversation Memories ---")
-        conversation_auto_save = config['evaluation'].get('conversation_auto_save', False)
+        conversation_auto_save = config['locomo_eval'].get('conversation_auto_save', False)
         
         for session_key, session in sample.conversation.sessions.items():
             for turn in session.turns:
@@ -141,7 +141,7 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
         
         # Answer questions
         logger.info("\n--- Answering Questions ---")
-        allowed_categories = config['evaluation']['categories']
+        allowed_categories = config['locomo_eval']['categories']
         
         for qa in sample.qa:
             if qa.category not in allowed_categories:
@@ -349,7 +349,7 @@ Use DATE of CONVERSATION to answer with an approximate date. Write an answer in 
     
     # Save results
     timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M")
-    output_dir = config['evaluation']['output_dir']
+    output_dir = config['locomo_eval']['output_dir']
     if not os.path.isabs(output_dir):
         project_root = Path(__file__).parent.parent.parent
         output_dir = os.path.join(project_root, output_dir)
@@ -399,11 +399,11 @@ def main():
     if args.model_id:
         config['model']['model_id'] = args.model_id
     if args.dataset:
-        config['evaluation']['dataset_path'] = args.dataset
+        config['locomo_eval']['dataset_path'] = args.dataset
     if args.ratio:
-        config['evaluation']['ratio'] = args.ratio
+        config['locomo_eval']['ratio'] = args.ratio
     if args.conversation_auto_save:
-        config['evaluation']['conversation_auto_save'] = True
+        config['locomo_eval']['conversation_auto_save'] = True
     
     # Ensure directories exist (relative to project root)
     project_root = Path(__file__).parent.parent.parent

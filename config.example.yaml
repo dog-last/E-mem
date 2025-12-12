@@ -22,8 +22,8 @@ memory:
   overlap_ratio: 0.1  # Overlap ratio between KV blocks (0.0-1.0)
   max_concurrent_gpu_operations: 2  # Number of concurrent GPU operations for parallel queries
 
-# Evaluation settings
-evaluation:
+# LoComo Evaluation settings
+locomo_eval:
   dataset_path: "evaluation/locomo/eval_data/locomo10.json"
   output_dir: "evaluation/locomo/results"
   ratio: 1.0  # Portion of dataset to evaluate (0.0-1.0)
@@ -38,6 +38,12 @@ evaluation:
   
   # Categories to evaluate (1-5)
   categories: [1,2,3,4,5]
+
+# Add other evaluation benchmarks here
+# example_eval:
+#   dataset_path: "evaluation/example/data.json"
+#   output_dir: "evaluation/example/results"
+#   ratio: 1.0
 
 # Logging
 logging:

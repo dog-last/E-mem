@@ -24,7 +24,7 @@ def mock_config():
             'clean_cache_first': True,
             'router_system_prompt': None
         },
-        'evaluation': {
+        'locomo_eval': {
             'dataset_path': 'eval_data/test.json',
             'output_dir': 'results',
             'ratio': 1.0,
@@ -101,7 +101,7 @@ class TestEvaluateDataset:
         }
         
         # Update config paths
-        mock_config['evaluation']['output_dir'] = str(tmp_path / 'results')
+        mock_config['locomo_eval']['output_dir'] = str(tmp_path / 'results')
         mock_config['logging']['log_dir'] = str(tmp_path / 'logs')
         
         # Run evaluation
@@ -123,7 +123,7 @@ class TestEvaluateDataset:
 
         # Create multiple samples
         mock_load_dataset.return_value = mock_samples * 10
-        mock_config['evaluation']['ratio'] = 0.1
+        mock_config['locomo_eval']['ratio'] = 0.1
         
         mock_agent = Mock()
         mock_agent.chat.return_value = "Test"
@@ -174,7 +174,7 @@ class TestEvaluateDataset:
         mock_create_chat_manager.return_value = mock_agent
         
         # Enable auto_save for conversations
-        mock_config['evaluation']['conversation_auto_save'] = True
+        mock_config['locomo_eval']['conversation_auto_save'] = True
         
         with patch('evaluation.locomo.eval_locomo.calculate_metrics') as mock_calc:
             mock_calc.return_value = {'f1': 0.5}

@@ -8,7 +8,7 @@ from evaluation.locomo.load_dataset import QA, Sample, load_locomo_dataset
 
 @pytest.fixture
 def dataset_path():
-    path = Path(__file__).parent.parent / "evaluation" / "locomo" / "eval_data" / "locomo10_part1.json"
+    path = Path(__file__).parent.parent / "evaluation" / "eval_data" / "locomo10_part1.json"
     if not path.exists():
         pytest.skip(f"Dataset not found: {path}")
     return str(path)

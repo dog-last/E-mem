@@ -68,7 +68,7 @@ memory:
   overlap_ratio: 0.1
   max_concurrent_gpu_operations: 2
 
-evaluation:
+locomo_eval:
   dataset_path: "evaluation/locomo/eval_data/locomo10.json"
   output_dir: "evaluation/locomo/results"
   ratio: 1.0

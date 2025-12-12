@@ -26,7 +26,7 @@ evaluation/locomo/kv_data/
 evaluation/locomo/text_data/
 
 # Evaluation data
-eval_data/
+*/eval_data/
 
 # Test coverage
 .coverage
