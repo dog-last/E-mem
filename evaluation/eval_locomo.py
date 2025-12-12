@@ -24,7 +24,7 @@ from evaluation.utils import (
     calculate_metrics,
     extract_answer_from_xml,
 )
-from src.conversation_manager.chat_handler import ChatManager
+from src.conversation_manager.factory import create_chat_manager
 
 
 def setup_logger(log_file: str) -> logging.Logger:
@@ -105,7 +105,9 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
         logger.info(f"{'='*80}")
         
         # Create agent
-        agent = ChatManager(
+        storage_mode = config['memory'].get('storage_mode', 'kv_cache')
+        agent = create_chat_manager(
+            storage_mode=storage_mode,
             model_id=config['model']['model_id'],
             openai_config=config['model']['openai_config'],
             clean_cache_first=config['memory']['clean_cache_first'],

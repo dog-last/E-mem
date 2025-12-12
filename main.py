@@ -3,35 +3,48 @@ Main entry point for the KV-cached memory agent system.
 This demonstrates a simple conversation loop with memory storage and retrieval.
 """
 
-from src.conversation_manager.chat_handler import ChatManager
+import os
 
+import yaml
+
+from src.conversation_manager.factory import create_chat_manager
+
+# Try to load from config.yaml
 try:
-    from config import (
-        ATTN_IMPLEMENTATION,
-        CLEAN_CACHE_ON_START,
-        DEVICE_MAP,
-        MAX_MEMORY,
-        MAX_NEW_TOKENS,
-        MODEL_CONTEXT_WINDOW,
-        MODEL_ID,
-        OFFLOAD_FOLDER,
-        OPENAI_CONFIG,
-        get_quantization_config,
-    )
-except ImportError:
-    print("Warning: config.py not found. Using default configuration.")
-    print("Copy config.example.py to config.py and customize it.\n")
+    config_path = os.path.join('evaluation', 'config.yaml')
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    MODEL_ID = config['model']['model_id']
+    OPENAI_CONFIG = config['model']['openai_config']
+    MODEL_CONTEXT_WINDOW = config['model']['model_context_window']
+    ATTN_IMPLEMENTATION = config['model']['attn_implementation']
+    DEVICE_MAP = config['model']['device_map']
+    STORAGE_MODE = config['memory'].get('storage_mode', 'kv_cache')
+    CLEAN_CACHE_ON_START = config['memory']['clean_cache_first']
+    MAX_NEW_TOKENS = 1024
+    
+    def get_quantization_config():
+        return config['model'].get('quantization_config')
+    
+    def get_max_memory():
+        return config.get('max_memory')
+except Exception as e:
+    print(f"Warning: Could not load config.yaml: {e}")
+    print("Using default configuration.\n")
     MODEL_ID = "Qwen/Qwen3-0.6B"
     OPENAI_CONFIG = {"api_key": "your-api-key-here"}
     MODEL_CONTEXT_WINDOW = 32768
     ATTN_IMPLEMENTATION = "sdpa"
     DEVICE_MAP = "auto"
-    MAX_MEMORY = None
-    OFFLOAD_FOLDER = None
+    STORAGE_MODE = "kv_cache"
     CLEAN_CACHE_ON_START = True
     MAX_NEW_TOKENS = 1024
     
     def get_quantization_config():
+        return None
+    
+    def get_max_memory():
         return None
 
 
@@ -42,8 +55,9 @@ def main():
     print("=" * 60)
     print("\nInitializing chat manager...")
     
-    # Initialize chat manager
-    chat_manager = ChatManager(
+    # Initialize chat manager using factory
+    chat_manager = create_chat_manager(
+        storage_mode=STORAGE_MODE,
         model_id=MODEL_ID,
         openai_config=OPENAI_CONFIG,
         clean_cache_first=CLEAN_CACHE_ON_START,
@@ -51,8 +65,7 @@ def main():
         attn_implementation=ATTN_IMPLEMENTATION,
         device_map=DEVICE_MAP,
         quantization_config=get_quantization_config(),
-        max_memory=MAX_MEMORY,
-        offload_folder=OFFLOAD_FOLDER
+        max_memory=get_max_memory()
     )
     
     print("Chat manager initialized successfully!")

@@ -27,4 +27,8 @@ config.yaml
 eval_data/
 
 # evaluation
-evaluation/nohup*.out
+nohup*.out
+
+# Text cache
+text_data/
+kv_data/

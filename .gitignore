@@ -13,6 +13,9 @@ wheels/
 kv_data/
 *.pt
 
+# Text cache data
+text_data/
+
 # Configuration
 config.py
 
@@ -20,5 +23,3 @@ config.py
 .coverage
 htmlcov/
 .pytest_cache/
-
-evaluation/nohup.out

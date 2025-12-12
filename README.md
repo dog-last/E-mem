@@ -2,6 +2,14 @@
 
 A novel approach to LLM memory management using KV cache for efficient context handling in conversational AI.
 
+## 🆕 NEW: Text Storage Mode
+
+Now supports **two storage backends**:
+- **KV Cache Mode** (default) - GPU-based, faster prefilling
+- **Text Storage Mode** (new) - API-based, no GPU required
+
+👉 See [docs/QUICKSTART_TEXT_STORAGE.md](docs/QUICKSTART_TEXT_STORAGE.md) for quick start guide
+
 ## 🎯 Core Concept
 
 Instead of traditional RAG-based memory retrieval, this system:
@@ -68,7 +76,7 @@ pip install -r requirements.txt
 
 ## 📖 Usage
 
-### Basic Example
+### Basic Example (KV Cache Mode)
 
 ```python
 from src.conversation_manager.chat_handler import ChatManager
@@ -87,10 +95,34 @@ response = chat_manager.chat(
 )
 ```
 
-### Run Interactive Demo
+### Using Factory (Recommended)
+
+```python
+from src.conversation_manager.factory import create_chat_manager
+
+# KV Cache mode (GPU required)
+kv_manager = create_chat_manager(
+    storage_mode="kv_cache",
+    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    openai_config={"api_key": "your-key"}
+)
+
+# Text Storage mode (No GPU required)
+text_manager = create_chat_manager(
+    storage_mode="text",
+    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    openai_config={"api_key": "your-key"}
+)
+```
+
+### Run Examples
 
 ```bash
+# KV Cache mode
 python main.py
+
+# Text Storage mode
+python examples/example_text_storage.py
 ```
 
 ## 🔧 Configuration
@@ -125,9 +157,10 @@ chat_manager = ChatManager(
 
 1. **No Traditional Retrieval** - Avoids embedding-based search inaccuracies
 2. **Full Context Understanding** - LLM sees complete memory, not fragments
-3. **Efficient Prefilling** - KV cache reuse speeds up context loading
+3. **Efficient Prefilling** - KV cache reuse speeds up context loading (KV Cache mode)
 4. **Scalable** - Parallel agents handle growing memory
 5. **Minimal Components** - Pure LLM-based, no external vector DBs
+6. **Flexible Deployment** - Choose between GPU (KV Cache) or API (Text Storage)
 
 ## 🎓 Use Cases
 
@@ -175,6 +208,13 @@ mem-with-kv-cache/
 - During query, all chunks are merged and reused
 - Position IDs ensure correct RoPE embeddings
 
+### Persistence (KV Cache Mode)
+- Agent metadata saved to `kv_data/agents_metadata.json`
+- Includes: block UUID, timestamp, summary, active status
+- Auto-saves when agent becomes inactive
+- Auto-loads on startup (if `clean_cache_first=False`)
+- See [docs/PERSISTENCE.md](docs/PERSISTENCE.md) for details
+
 ### Memory Lifecycle
 1. User provides information
 2. Active agent adds to KV cache
@@ -183,6 +223,14 @@ mem-with-kv-cache/
    - Moves to inactive pool
    - New active agent created
 4. Queries hit both active (recent) and inactive (historical) agents
+
+## 📚 Documentation
+
+- [docs/QUICKSTART_TEXT_STORAGE.md](docs/QUICKSTART_TEXT_STORAGE.md) - Quick start for Text Storage mode
+- [docs/TEXT_STORAGE_README.md](docs/TEXT_STORAGE_README.md) - Detailed Text Storage documentation
+- [docs/ARCHITECTURE_COMPARISON.md](docs/ARCHITECTURE_COMPARISON.md) - Architecture comparison
+- [docs/IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md) - Implementation details
+- [docs/PERSISTENCE.md](docs/PERSISTENCE.md) - KV Cache persistence guide
 
 ## 📝 License
 

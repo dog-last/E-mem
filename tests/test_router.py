@@ -167,9 +167,10 @@ class TestRouter:
         mock_agent.summary = "Summary"
         router.add_blocks(mock_agent)
         
-        result = router._map_blocks("Test query")
+        result = router._map_blocks("Test query", max_blocks=5)
         
-        assert result == []
+        # When no summary_index tag found, returns all blocks up to max_blocks
+        assert len(result) == 1
     
     @patch("src.agent.base.OpenAI")
     def test_map_blocks_out_of_range_indices(self, mock_openai, mock_openai_config):
@@ -225,6 +226,7 @@ class TestRouter:
         mock_agent.summary = "Summary"
         router.add_blocks(mock_agent)
         
-        result = router._map_blocks("Test query")
+        result = router._map_blocks("Test query", max_blocks=5)
         
-        assert result == []
+        # When parsing fails (no valid integers), returns empty list
+        assert len(result) == 0

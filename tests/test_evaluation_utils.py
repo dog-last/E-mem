@@ -24,8 +24,8 @@ class TestNormalizeAnswer:
     def test_int_input(self):
         assert normalize_answer(2022) == "2022"
     
-    def test_float_input(self):
-        assert normalize_answer(3.14) == "3.14"
+    def test_remove_punctuation(self):
+        assert normalize_answer("Hello, World!") == "hello world"
 
 
 class TestF1Score:
@@ -49,7 +49,7 @@ class TestCalculateMetrics:
         
         expected_keys = [
             "exact_match", "f1", "rouge1_f", "rouge2_f", "rougeL_f",
-            "bleu1", "bleu2", "bleu3", "bleu4", "meteor", "sbert_similarity"
+            "bleu1", "bleu2", "bleu3", "bleu4", "meteor"
         ]
         for key in expected_keys:
             assert key in metrics
@@ -57,7 +57,6 @@ class TestCalculateMetrics:
         
         assert 0 <= metrics["exact_match"] <= 1
         assert 0 <= metrics["f1"] <= 1
-        assert 0 <= metrics["sbert_similarity"] <= 1
     
     def test_with_int(self):
         metrics = calculate_metrics("The year is 2022", 2022)

@@ -1,20 +1,21 @@
 import logging
 import re
+import threading
 import uuid
 from datetime import datetime
 from typing import List
-import threading
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 
+import config
 from src.memory.kv_block_manager.block import KVBlock
 from src.utils.prompt import MEMORY_AGENT_SYS_PROMPT, SUMMARY_INSTRUCTION
 
 logger = logging.getLogger(__name__)
 
-# Semaphore to limit concurrent GPU operations (allow 2 at a time)
-_gpu_semaphore = threading.Semaphore(2)
+# Semaphore to limit concurrent GPU operations
+_gpu_semaphore = threading.Semaphore(config.MAX_CONCURRENT_GPU_OPERATIONS)
 
 
 class MemoryAgent:
@@ -24,7 +25,9 @@ class MemoryAgent:
                    device_map: str = "auto", 
                    quantization_config=None,
                    max_memory=None,
-                   offload_folder=None):
+                   offload_folder=None,
+                   load_from_block_id: str = None,
+                   load_timestamp: str = None):
         self.model_id = model_id
         self.model_context_window = model_context_window
         self.block_size = int(model_context_window * 0.37)
@@ -63,16 +66,32 @@ class MemoryAgent:
         self._extract_chat_tokens()
         logger.debug(f"Chat tokens extracted: role_start='{self.role_start}', role_end='{self.role_end}'")
         
-        # Initialize first block
-        self.current_block = KVBlock(
-            block_id=uuid.uuid4(),
-            create_timestamp=datetime.now().strftime("%Y%m%d_%H%M%S"),
-            block_size=self.block_size
-        )
-        self.global_offset = 0
-        self.saved_chunks = []  # Store metadata only
-        self.chunk_number = 0
-        self.merged_cache = None  # Single KV cache in GPU memory
+        # Initialize or load block
+        if load_from_block_id and load_timestamp:
+            # Load existing block
+            self.current_block = KVBlock(
+                block_id=uuid.UUID(load_from_block_id),
+                create_timestamp=load_timestamp,
+                block_size=self.block_size
+            )
+            # Load state from disk
+            cache_state = self.current_block.load_cache()
+            self.global_offset = cache_state.get("global_offset", 0)
+            self.saved_chunks = cache_state.get("saved_chunks", [])
+            self.chunk_number = cache_state.get("chunk_number", 0)
+            self.merged_cache = None  # Will be loaded on demand
+            logger.info(f"Loaded existing block: {load_from_block_id} (chunks: {len(self.saved_chunks)}, offset: {self.global_offset})")
+        else:
+            # Create new block
+            self.current_block = KVBlock(
+                block_id=uuid.uuid4(),
+                create_timestamp=datetime.now().strftime("%Y%m%d_%H%M%S"),
+                block_size=self.block_size
+            )
+            self.global_offset = 0
+            self.saved_chunks = []
+            self.chunk_number = 0
+            self.merged_cache = None
     
     def _get_layer_devices(self):
         """Get accurate device mapping for each layer using hf_device_map."""
@@ -236,7 +255,7 @@ class MemoryAgent:
             str: The generated text.
         """
         if not self.saved_chunks:
-            logger.warning("No knowledge available for generation")
+            logger.warning(f"No knowledge available for generation (block_id={self.current_block.block_id}, is_active={self.is_active}, chunk_number={self.chunk_number})")
             return "No knowledge available."
         
         logger.debug(f"Generating response with max_new_tokens={max_new_tokens}")
@@ -267,7 +286,7 @@ class MemoryAgent:
                     else:
                         logger.error(f"No cache available for inactive agent (block {self.current_block.block_id})")
                         logger.error(f"Cache state keys: {cache_state.keys() if cache_state else 'None'}")
-                        raise RuntimeError(f"No cache available for inactive agent. Block may not have been properly saved.")
+                        raise RuntimeError("No cache available for inactive agent. Block may not have been properly saved.")
             else:
                 # Active agent with no cache - this shouldn't happen if chunks were added
                 logger.warning("Active agent has no merged_cache but has saved_chunks")

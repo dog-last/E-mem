@@ -18,8 +18,9 @@ class KVBlock:
         self.block_size=block_size
         self.block_used=0   # calc the used tokens
         self.chunk_num=0    # log the number of chunks stored in this block
-        # initialize the kv cache block file
-        torch.save({}, self.store_target)
+        # initialize the kv cache block file only if it doesn't exist
+        if not os.path.exists(self.store_target):
+            torch.save({}, self.store_target)
 
 
     def save_cache(self,cache_state:dict,total_new_token:int):

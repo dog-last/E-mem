@@ -49,7 +49,8 @@ class TestBaseAgent:
             response = agent.generate_response("Test question")
             
             assert response == "Test response"
-            assert len(agent.messgages) == 3  # system + user + assistant
+            # After reset, should only have system message
+            assert len(agent.messgages) == 1
     
     def test_generate_response_with_tool_call(self, mock_openai_config):
         """Test generating response with tool call."""
@@ -156,7 +157,8 @@ class TestBaseAgent:
             response = agent.generate_response("Test question")
             
             assert response == "Final response"
-            assert len(agent.messgages) == 6  # system + user + assistant + 2 tools + assistant
+            # After reset, should only have system message
+            assert len(agent.messgages) == 1
     
     def test_custom_system_prompt(self, mock_openai_config):
         """Test initialization with custom system prompt."""

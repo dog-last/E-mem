@@ -1,7 +1,12 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
-from src.memory.kv_block_manager.block import clear_cache
+from src.memory.kv_block_manager.block import clear_cache as clear_kv_cache
+from src.memory.kv_block_manager.metadata import (
+    clear_metadata,
+    load_agents_metadata,
+    save_agents_metadata,
+)
 from src.memory.memory_agent.agent import MemoryAgent
 from src.memory.router.router import Router
 
@@ -114,15 +119,28 @@ class MemoryHandler:
                    offload_folder=None,
                    overlap_ratio: float = 0.1):
         logger.info(f"Initializing MemoryHandler with model: {model_id}, overlap_ratio: {overlap_ratio}")
+        self.model_id = model_id
+        self.model_context_window = model_context_window
+        self.attn_implementation = attn_implementation
+        self.device_map = device_map
+        self.quantization_config = quantization_config
+        self.max_memory = max_memory
+        self.offload_folder = offload_folder
+        
         self.add_handler=AddHandler(model_id,model_context_window,attn_implementation,device_map,quantization_config,max_memory,offload_folder,overlap_ratio)
         self.inactive_memory_agents = []
         if router_system_prompt is None:
             self.query_handler=QueryHandler(Router(openai_config=openai_config))
         else:
             self.query_handler=QueryHandler(Router(openai_config=openai_config,system_prompt=router_system_prompt))
+        
         if clean_cache_first:
-            logger.info("Clearing KV cache")
-            clear_cache()
+            logger.info("Clearing KV cache and metadata")
+            clear_kv_cache()
+            clear_metadata()
+        else:
+            # Load existing agents
+            self._load_existing_agents()
         
     def add_memory(self, text: str):
         """
@@ -130,6 +148,11 @@ class MemoryHandler:
         Args:
             text (str): The text to add to the memory agent.
         """
+        # Create agent if doesn't exist
+        if self.add_handler.active_memory_agent is None:
+            self.add_handler.create_agent()
+            self._save_metadata()  # Save metadata for new active agent
+        
         is_active = self.add_handler.add_memory(text)
         if not is_active:
             # Agent became full, move to inactive and create new one with overlap
@@ -154,6 +177,9 @@ class MemoryHandler:
             
             # Clear overlap buffer
             self.add_handler.clear_overlap_buffer()
+            
+            # Save metadata (includes new active agent)
+            self._save_metadata()
 
     def query_memory(self, user_query: str) -> str:
         """
@@ -188,3 +214,77 @@ class MemoryHandler:
             return old_memory
         else:
             return f"The memory stored a period of time ago: {old_memory}\n\nThe memory stored just now:\n New Memory Block 1: {new_memory}"
+    
+    def _save_metadata(self):
+        """Save all agents metadata to disk."""
+        agents_data = []
+        
+        # Save inactive agents (with summary)
+        for agent in self.inactive_memory_agents:
+            agents_data.append({
+                "block_id": str(agent.current_block.block_id),
+                "timestamp": agent.current_block.create_timestamp,
+                "summary": agent.summary,
+                "is_active": False,
+                "block_used": agent.current_block.block_used,
+                "chunk_number": agent.chunk_number
+            })
+        
+        # Save active agent if exists (without summary)
+        if self.add_handler.active_memory_agent:
+            agent = self.add_handler.active_memory_agent
+            agents_data.append({
+                "block_id": str(agent.current_block.block_id),
+                "timestamp": agent.current_block.create_timestamp,
+                "summary": None,  # Active agent doesn't have summary yet
+                "is_active": True,
+                "block_used": agent.current_block.block_used,
+                "chunk_number": agent.chunk_number
+            })
+        
+        save_agents_metadata(agents_data)
+        logger.info(f"Saved metadata for {len(agents_data)} agents ({len(self.inactive_memory_agents)} inactive, {'1 active' if self.add_handler.active_memory_agent else '0 active'})")
+    
+    def _load_existing_agents(self):
+        """Load existing agents from metadata."""
+        metadata = load_agents_metadata()
+        if not metadata:
+            logger.info("No existing agents found")
+            return
+        
+        logger.info(f"Loading {len(metadata)} existing agents")
+        
+        for agent_data in metadata:
+            # Recreate agent
+            agent = MemoryAgent(
+                model_id=self.model_id,
+                model_context_window=self.model_context_window,
+                attn_implementation=self.attn_implementation,
+                device_map=self.device_map,
+                quantization_config=self.quantization_config,
+                max_memory=self.max_memory,
+                offload_folder=self.offload_folder,
+                load_from_block_id=agent_data["block_id"],
+                load_timestamp=agent_data["timestamp"]
+            )
+            
+            # Restore summary and block_used
+            agent.summary = agent_data.get("summary")
+            agent.current_block.block_used = agent_data.get("block_used", 0)
+            agent.chunk_number = agent_data.get("chunk_number", 0)
+            
+            if agent_data["is_active"]:
+                # Restore as active agent
+                agent.is_active = True
+                self.add_handler.active_memory_agent = agent
+                logger.info(f"Restored active agent: {agent_data['block_id']} (used: {agent_data.get('block_used', 0)} tokens)")
+            else:
+                # Restore as inactive agent
+                agent.is_active = False
+                # Pre-load cache to CPU for faster queries
+                agent.preload_cache()
+                self.inactive_memory_agents.append(agent)
+                self.query_handler.router.add_blocks(agent)
+                logger.info(f"Restored inactive agent: {agent_data['block_id']} (summary: {len(agent.summary) if agent.summary else 0} chars)")
+        
+        logger.info(f"Loaded {len(self.inactive_memory_agents)} inactive agents and {'1 active' if self.add_handler.active_memory_agent else 'no active'} agent")

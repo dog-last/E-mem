@@ -33,6 +33,7 @@ class TestAddHandler:
         """Test adding memory."""
         mock_agent = Mock()
         mock_agent.is_active = True
+        mock_agent.block_size = 1000
         mock_agent_class.return_value = mock_agent
         
         handler = AddHandler(model_id="test-model")
@@ -93,16 +94,17 @@ class TestQueryHandler:
         handler = QueryHandler(router=mock_router)
         result = handler.query_memory("Test query")
         
-        assert result == "Result 1\nResult 2"
+        assert result == "Old Memory Block 1: Result 1\nOld Memory Block 2: Result 2"
 
 
 class TestMemoryHandler:
     """Test MemoryHandler functionality."""
     
-    @patch("src.memory.core.loop_handler.clear_cache")
+    @patch("src.memory.core.loop_handler.clear_metadata")
+    @patch("src.memory.core.loop_handler.clear_kv_cache")
     @patch("src.memory.core.loop_handler.Router")
     @patch("src.memory.core.loop_handler.AddHandler")
-    def test_init(self, mock_add_handler, mock_router, mock_clear, mock_openai_config):
+    def test_init(self, mock_add_handler, mock_router, mock_clear_kv, mock_clear_meta, mock_openai_config):
         """Test MemoryHandler initialization."""
         handler = MemoryHandler(
             model_id="test-model",
@@ -112,7 +114,8 @@ class TestMemoryHandler:
         
         assert handler.add_handler is not None
         assert handler.inactive_memory_agents == []
-        mock_clear.assert_called_once()
+        mock_clear_kv.assert_called_once()
+        mock_clear_meta.assert_called_once()
     
     @patch("src.memory.core.loop_handler.Router")
     @patch("src.memory.core.loop_handler.AddHandler")
@@ -128,16 +131,26 @@ class TestMemoryHandler:
         mock_add_handler.add_memory.assert_called_once_with("Test memory")
         assert len(handler.inactive_memory_agents) == 0
     
+    @patch("src.memory.core.loop_handler.save_agents_metadata")
     @patch("src.memory.core.loop_handler.Router")
     @patch("src.memory.core.loop_handler.AddHandler")
-    def test_add_memory_becomes_inactive(self, mock_add_handler_class, mock_router_class):
+    def test_add_memory_becomes_inactive(self, mock_add_handler_class, mock_router_class, mock_save_meta):
         """Test adding memory when agent becomes inactive."""
+        mock_block = Mock()
+        mock_block.block_id = "test-id"
+        mock_block.create_timestamp = "20231201_120000"
+        mock_block.block_used = 100
+        mock_block.chunk_num = 5
+        
         mock_agent = Mock()
         mock_agent.is_active = False
+        mock_agent.summary = "Test summary"
+        mock_agent.current_block = mock_block
         
         mock_add_handler = Mock()
         mock_add_handler.add_memory.return_value = False
         mock_add_handler.active_memory_agent = mock_agent
+        mock_add_handler.get_overlap_memories.return_value = []
         mock_add_handler_class.return_value = mock_add_handler
         
         mock_router = Mock()
@@ -236,10 +249,11 @@ class TestMemoryHandler:
         
         assert result == "New memory content"
     
-    @patch("src.memory.core.loop_handler.clear_cache")
+    @patch("src.memory.core.loop_handler.clear_metadata")
+    @patch("src.memory.core.loop_handler.clear_kv_cache")
     @patch("src.memory.core.loop_handler.Router")
     @patch("src.memory.core.loop_handler.AddHandler")
-    def test_init_no_clean_cache(self, mock_add_handler, mock_router, mock_clear):
+    def test_init_no_clean_cache(self, mock_add_handler, mock_router, mock_clear_kv, mock_clear_meta):
         """Test initialization without cleaning cache."""
         _ = MemoryHandler(
             model_id="test-model",
@@ -247,7 +261,8 @@ class TestMemoryHandler:
             clean_cache_first=False
         )
         
-        mock_clear.assert_not_called()
+        mock_clear_kv.assert_not_called()
+        mock_clear_meta.assert_not_called()
     
     @patch("src.memory.core.loop_handler.Router")
     @patch("src.memory.core.loop_handler.AddHandler")

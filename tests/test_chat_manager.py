@@ -89,6 +89,9 @@ class TestChatManager:
         mock_memory_handler.query_memory.return_value = "Found memory"
         mock_memory_handler_class.return_value = mock_memory_handler
         
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+        
         chat = ChatManager(
             model_id="test-model",
             openai_config=mock_openai_config

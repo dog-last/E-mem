@@ -13,6 +13,8 @@ model:
 memory:
   clean_cache_first: true
   router_system_prompt: null
+  overlap_ratio: 0.1  # Overlap ratio between KV blocks (0.0-1.0)
+  max_concurrent_gpu_operations: 2  # Number of concurrent GPU operations for parallel queries
 
 # Evaluation settings
 evaluation:

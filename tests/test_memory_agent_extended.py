@@ -133,6 +133,7 @@ class TestMemoryAgentExtended:
         agent.saved_chunks = [{"start": 0, "length": 5}]
         agent.global_offset = 5
         agent.merged_cache = None
+        agent.is_active = False  # Set to inactive to trigger disk load
         agent.current_block = mock_block
         
         result = agent.query("Test question")

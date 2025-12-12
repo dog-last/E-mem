@@ -37,7 +37,7 @@ class TestMemoryAgent:
         agent = MemoryAgent(model_id="test-model", model_context_window=1000)
         
         assert agent.model_id == "test-model"
-        assert agent.block_size == 900
+        assert agent.block_size == 370
         assert agent.is_active
         assert agent.global_offset == 0
         assert agent.chunk_number == 0
