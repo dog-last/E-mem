@@ -2,8 +2,13 @@
 
 # Model settings
 model:
-  model_id: "Qwen/Qwen3-0.6B"
-  openai_config: null
+  model_id: "Qwen/Qwen3-4B"
+  openai_config: {
+    "api_key":"your api-key here",
+    "base_url":"the base url here",
+    "model":"gpt-4o-mini"
+  }
+
   model_context_window: 32768
   attn_implementation: "sdpa"
   device_map: "auto"
@@ -11,7 +16,8 @@ model:
 
 # Memory settings
 memory:
-  clean_cache_first: true
+  storage_mode: "kv_cache"  # "kv_cache" or "text" - choose storage backend
+  clean_cache_first: true  # Set to true to avoid loading corrupted cache
   router_system_prompt: null
   overlap_ratio: 0.1  # Overlap ratio between KV blocks (0.0-1.0)
   max_concurrent_gpu_operations: 2  # Number of concurrent GPU operations for parallel queries
@@ -22,12 +28,16 @@ evaluation:
   output_dir: "results"
   ratio: 1.0  # Portion of dataset to evaluate (0.0-1.0)
   
+  # Path to specific questions JSON file (optional)
+  # If provided, only these questions will be evaluated
+  # specific_questions_path: "./eval_data/specific_questions.json"
+  
   # Auto-save settings for conversations
-  # QA questions NEVER use auto_save
-  conversation_auto_save: false  # Set to true to enable auto-save for conversation turns
+  # QA questions NEVER use auto_save, this one is used for conversation turns
+  conversation_auto_save: True  # Set to true to enable auto-save for conversation turns
   
   # Categories to evaluate (1-5)
-  categories: [1, 2, 3, 4, 5]
+  categories: [1,2,3,4,5]
 
 # Logging
 logging:
