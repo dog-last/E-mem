@@ -35,7 +35,8 @@ class BaseAgent(ABC):
                 model=self.model,
                 messages=self.messgages,
                 tools=tools,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
+                temperature=0
             )
             
             response_message = response.choices[0].message
@@ -66,7 +67,8 @@ class BaseAgent(ABC):
         final_response = self.llm.chat.completions.create(
             model=self.model,
             messages=self.messgages,
-            max_tokens=max_tokens
+            max_tokens=max_tokens,
+            temperature=0
         )
         
         # Check if still has tool calls after max rounds

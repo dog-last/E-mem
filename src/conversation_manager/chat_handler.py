@@ -206,7 +206,7 @@ class ChatManager(BaseAgent):
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=2048,
-                temperature=0.3
+                temperature=0
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -397,7 +397,7 @@ class TextStorageChatManager(BaseAgent):
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=2048,
-                temperature=0.3
+                temperature=0
             )
             return response.choices[0].message.content
         except Exception as e:

@@ -178,19 +178,26 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
                     answer_tmp.append(wrong_answer)
                     answer_tmp.append(reference_answer)
                 
-                prompt = f"""You MUST use query_memory tool to search the conversation history. Try the original question as query at the first time. And if failed, adapt your search strategy based on the question to find the most relevant information.
+                prompt = prompt = f"""You MUST use query_memory tool to search the conversation history. Try the original question as query at the first time. And if failed, adapt your search strategy based on the question to find the most relevant information.
 
 Question: {qa.question}
 
-### CRITICAL: STRICT EVIDENCE STANDARD
-1. **Burden of Proof:** You must default to the option representing "Not mentioned" (or similar negative status).
-2. **Explicit Evidence Only:** Only switch to the specific answer if the retrieved text contains **explicit, unambiguous, and direct confirmation** of the fact.
-3. **Zero Inference Tolerance:**
-   * If the information is vague, implied, or requires guessing -> Select "Not mentioned".
-   * If the text talks about a related topic but not the exact specific detail -> Select "Not mentioned".
-   * If you are unsure -> Select "Not mentioned".
+### CRITICAL: THE "REJECTION FIRST" PROTOCOL
+Your goal is to PROVE that the answer is MISSING. You must actively try to disqualify any potential evidence.
 
-Select the correct answer: '{answer_tmp[0]}' or '{answer_tmp[1]}'. Provide ONLY the selected answer without explanation."""
+1. **Default Verdict:** Start with the assumption that the correct answer is "Not mentioned".
+2. **The "Exact Match" Test:**
+   - Does the text contain the **exact keywords** or **synonyms** for the specific detail asked?
+   - If NO -> Select "Not mentioned".
+   - If YES, but it refers to a different context/person/time -> Select "Not mentioned".
+
+3. **The "No Inference" Firewall:**
+   - **Hypothetical Scenario:** If the text says "She likes fruit" and the question asks "Does she like apples?", you MUST select "Not mentioned" (because she might only like bananas).
+   - **Probability vs. Certainty:** Even if an answer is 99% likely to be true based on context, if it is not 100% stated -> Select "Not mentioned".
+
+4. **Final Check:** Before selecting a specific option, ask yourself: "Can I underline the exact sentence that proves this?" If you cannot physically point to the sentence -> Select "**Not mentioned** or **no reference**".
+
+YOU MUST Select the correct answer: '{answer_tmp[0]}' or '{answer_tmp[1]}'. Provide ONLY the selected answer without explanation."""
             elif qa.category == 2:  # Date/Time Questions
                 prompt = f"""You are a precise date extraction and normalization assistant.
 Your task is to answer the question based on the document and STRICTLY adhere to the formatting rules below.
@@ -226,11 +233,12 @@ Analyze the `Question` text provided at the bottom.
 Question: {qa.question}
 """
             elif qa.category == 1:  # Fact Retrieval/General
-                prompt = f"""Based on the text below, analyze the context to provide the best answer to the question.
+                prompt = prompt = f"""Based on the text below, analyze the context to provide the best answer to the question.
 
 ### PROCESS
-1. **Analyze (Reasoning):** Deeply analyze the text to understand the specific details and implied facts related to the question.
-2. **Synthesize (Output):** Construct an answer based on your analysis. Use the **terminology and content from the text** to formulate a precise answer.
+1. **Understand:** Fully grasp the specific details requested by the question.
+2. **Reason:** Analyze the text in relation to the question to infer or locate the correct answer.
+3. **Extract:** Formulate the final answer using the **exact wording and terminology** directly from the text.
 
 ### CRITICAL CONSTRAINTS
 * **Strict Relevance:** **NEVER** output content unrelated to the question. Focus ONLY on the specific details requested.
@@ -238,7 +246,7 @@ Question: {qa.question}
 * **Format:** The final OUTPUT must be a **short phrase** (under 10 words). NO sentences.
 
 Question: {qa.question}
-                """
+"""
             elif qa.category == 3:  # Analysis/Inference Questions
                 prompt = f"""Based on the text below, write an answer in the form of **a short phrase** for the following question, not a sentence.
 ### CRITICAL: CONDITIONAL FORMATTING
@@ -259,14 +267,19 @@ Question: {qa.question}
 """
             elif qa.category == 4:
                 # Detailed question
-                prompt = f"""Based on the text below, write an answer in the form of **a short phrase** for the following question, not a sentence. Answer with exact words from the context whenever possible.
- Extract (Final Output): Output ONLY the specific entity or short phrase found in the text.
+                prompt = f"""You are an extractive QA assistant. Your goal is to extract the exact answer substring from the text.
 
-### CRITICAL CONSTRAINTS
-* **Anti-Refusal:** NEVER say "not mentioned". You MUST output the best possible guess or closest relevant entity from the text.
-* **OUTPUT:** The final OUTPUT must be a **single word** or **short phrase** (under 10 words). NO sentences.
+INSTRUCTIONS:
+1. Locate the exact answer in the TEXT.
+2. Output **ONLY** the key entity, date, name, or short phrase representing the answer.
+3. **DO NOT** use full sentences. **DO NOT** add filler words like "The answer is", "a", "the", "she is".
+4. Keep it as short as possible (ideally 1-5 words).
+5. Use the EXACT wording from the text if possible.
 
-Question: {qa.question}"""
+QUESTION:{qa.question}
+
+Answer:
+"""
             else:
                 # Other categories
                 prompt = f"""You MUST use query_memory tool to search the conversation history. Try the original question as query at the first time. And if fail, modify your search strategy as needed to find the most relevant information.
