@@ -1,1 +1,1 @@
-"""Evaluation package for LoComo dataset."""
+"""Evaluation framework for memory system."""

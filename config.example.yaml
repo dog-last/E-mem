@@ -24,13 +24,13 @@ memory:
 
 # Evaluation settings
 evaluation:
-  dataset_path: "./eval_data/locomo10.json"
-  output_dir: "results"
+  dataset_path: "evaluation/locomo/eval_data/locomo10.json"
+  output_dir: "evaluation/locomo/results"
   ratio: 1.0  # Portion of dataset to evaluate (0.0-1.0)
   
   # Path to specific questions JSON file (optional)
   # If provided, only these questions will be evaluated
-  # specific_questions_path: "./eval_data/specific_questions.json"
+  # specific_questions_path: "evaluation/locomo/eval_data/specific_questions.json"
   
   # Auto-save settings for conversations
   # QA questions NEVER use auto_save, this one is used for conversation turns
@@ -41,5 +41,5 @@ evaluation:
 
 # Logging
 logging:
-  log_dir: "logs"
+  log_dir: "evaluation/locomo/logs"
   log_level: "INFO"

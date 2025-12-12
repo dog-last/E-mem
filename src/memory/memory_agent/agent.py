@@ -8,14 +8,20 @@ from typing import List
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 
-import config
 from src.memory.kv_block_manager.block import KVBlock
 from src.utils.prompt import MEMORY_AGENT_SYS_PROMPT, SUMMARY_INSTRUCTION
 
 logger = logging.getLogger(__name__)
 
+# Load config
+try:
+    import config
+    MAX_CONCURRENT_GPU_OPERATIONS = config.MAX_CONCURRENT_GPU_OPERATIONS
+except (ImportError, AttributeError):
+    MAX_CONCURRENT_GPU_OPERATIONS = 2
+
 # Semaphore to limit concurrent GPU operations
-_gpu_semaphore = threading.Semaphore(config.MAX_CONCURRENT_GPU_OPERATIONS)
+_gpu_semaphore = threading.Semaphore(MAX_CONCURRENT_GPU_OPERATIONS)
 
 
 class MemoryAgent:
@@ -79,7 +85,17 @@ class MemoryAgent:
             self.global_offset = cache_state.get("global_offset", 0)
             self.saved_chunks = cache_state.get("saved_chunks", [])
             self.chunk_number = cache_state.get("chunk_number", 0)
-            self.merged_cache = None  # Will be loaded on demand
+            
+            # Load merged_cache if available (for active agent)
+            if "merged_cache" in cache_state and cache_state["merged_cache"]:
+                logger.info(f"Loading merged_cache for active agent (block {load_from_block_id})")
+                self.merged_cache = DynamicCache()
+                for layer_idx, (k, v) in enumerate(cache_state["merged_cache"]):
+                    target_device = self.layer_devices.get(layer_idx, self.primary_device)
+                    self.merged_cache.update(k.to(target_device), v.to(target_device), layer_idx)
+            else:
+                self.merged_cache = None  # Will be loaded on demand for inactive agents
+            
             logger.info(f"Loaded existing block: {load_from_block_id} (chunks: {len(self.saved_chunks)}, offset: {self.global_offset})")
         else:
             # Create new block

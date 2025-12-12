@@ -6,7 +6,7 @@ import pytest
 os.environ.setdefault('HF_HOME', '/mnt/d/AI')
 os.environ.setdefault('HF_ENDPOINT', 'https://hf-mirror.com')
 
-from evaluation.utils import (
+from evaluation.locomo.utils import (
     aggregate_metrics,
     calculate_metrics,
     f1_score,

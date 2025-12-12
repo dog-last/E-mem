@@ -4,7 +4,7 @@
 
 This project now supports **two storage backends**:
 
-1. **KV Cache Mode** (default) - Stores memories as KV cache for faster prefilling
+1. **KV Cache Mode** (default) - Stores memories as KV cache
 2. **Text Storage Mode** (new) - Stores memories as plain text in JSON files
 
 Both modes share the same architecture: block-based storage, summaries, router-based retrieval, and active/inactive agent management.
@@ -18,7 +18,6 @@ Both modes share the same architecture: block-based storage, summaries, router-b
 | **Block Manager** | `KVBlock` | `TextBlock` |
 | **Handler** | `MemoryHandler` | `TextMemoryHandler` |
 | **Query Method** | KV cache + model.generate() | Full text + LLM API |
-| **Speed** | Faster (cached prefill) | Slower (full text re-encoding) |
 | **Resource** | GPU memory | API calls |
 
 ## Usage
@@ -31,7 +30,7 @@ from src.conversation_manager.factory import create_chat_manager
 # KV Cache mode
 kv_manager = create_chat_manager(
     storage_mode="kv_cache",
-    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    model_id="Qwen/Qwen3-4B",
     openai_config={"api_key": "your-key"},
     clean_cache_first=True
 )
@@ -39,7 +38,7 @@ kv_manager = create_chat_manager(
 # Text Storage mode
 text_manager = create_chat_manager(
     storage_mode="text",
-    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    model_id="Qwen/Qwen3-4B",
     openai_config={"api_key": "your-key"},
     clean_cache_first=True
 )
@@ -52,14 +51,14 @@ from src.conversation_manager.chat_handler import ChatManager, TextStorageChatMa
 
 # KV Cache mode
 kv_manager = ChatManager(
-    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    model_id="Qwen/Qwen3-4B",
     openai_config={"api_key": "your-key"},
     clean_cache_first=True
 )
 
 # Text Storage mode
 text_manager = TextStorageChatManager(
-    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    model_id="Qwen/Qwen3-4B",
     openai_config={"api_key": "your-key"},
     clean_cache_first=True
 )
@@ -113,9 +112,8 @@ Both directories are created in the current working directory.
 
 ### Use KV Cache Mode When:
 - You have GPU resources available
-- Speed is critical (faster prefilling)
-- Working with conversational AI requiring low latency
-- Memory scope is limited (user-specific data)
+- Working with conversational AI
+- Local deployment with GPU
 
 ### Use Text Storage Mode When:
 - No GPU available or limited GPU memory
@@ -126,7 +124,7 @@ Both directories are created in the current working directory.
 
 ## Example
 
-See `example_text_storage.py` for a complete working example.
+See `examples/example_text_storage.py` for a complete working example.
 
 ## API Compatibility
 

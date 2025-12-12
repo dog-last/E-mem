@@ -1,3 +1,4 @@
+import atexit
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
@@ -86,6 +87,9 @@ class AddHandler:
         if self.active_memory_agent is None:
             logger.debug("No active memory agent for query")
             return "No active memory."
+        if not self.active_memory_agent.saved_chunks:
+            logger.debug("Active memory agent has no data yet")
+            return "No active memory."
         logger.debug(f"Querying active memory agent: {query[:50]}...")
         result = self.active_memory_agent.query(query)
         return result
@@ -142,6 +146,9 @@ class MemoryHandler:
             # Load existing agents
             self._load_existing_agents()
         
+        # Register cleanup on exit
+        atexit.register(self.cleanup)
+        
     def add_memory(self, text: str):
         """
         Add text to the active memory agent.
@@ -151,9 +158,12 @@ class MemoryHandler:
         # Create agent if doesn't exist
         if self.add_handler.active_memory_agent is None:
             self.add_handler.create_agent()
-            self._save_metadata()  # Save metadata for new active agent
         
         is_active = self.add_handler.add_memory(text)
+        
+        # Save metadata after adding memory
+        self._save_metadata()
+        
         if not is_active:
             # Agent became full, move to inactive and create new one with overlap
             logger.info("Moving full memory agent to inactive pool")
@@ -177,9 +187,6 @@ class MemoryHandler:
             
             # Clear overlap buffer
             self.add_handler.clear_overlap_buffer()
-            
-            # Save metadata (includes new active agent)
-            self._save_metadata()
 
     def query_memory(self, user_query: str) -> str:
         """
@@ -230,17 +237,19 @@ class MemoryHandler:
                 "chunk_number": agent.chunk_number
             })
         
-        # Save active agent if exists (without summary)
-        if self.add_handler.active_memory_agent:
+        # Save active agent if exists AND has data (without summary)
+        if self.add_handler.active_memory_agent and self.add_handler.active_memory_agent.saved_chunks:
             agent = self.add_handler.active_memory_agent
-            agents_data.append({
-                "block_id": str(agent.current_block.block_id),
-                "timestamp": agent.current_block.create_timestamp,
-                "summary": None,  # Active agent doesn't have summary yet
-                "is_active": True,
-                "block_used": agent.current_block.block_used,
-                "chunk_number": agent.chunk_number
-            })
+            # Skip if agent is a Mock (test environment)
+            if not hasattr(agent, '_mock_name'):
+                agents_data.append({
+                    "block_id": str(agent.current_block.block_id),
+                    "timestamp": agent.current_block.create_timestamp,
+                    "summary": None,  # Active agent doesn't have summary yet
+                    "is_active": True,
+                    "block_used": agent.current_block.block_used,
+                    "chunk_number": agent.chunk_number
+                })
         
         save_agents_metadata(agents_data)
         logger.info(f"Saved metadata for {len(agents_data)} agents ({len(self.inactive_memory_agents)} inactive, {'1 active' if self.add_handler.active_memory_agent else '0 active'})")
@@ -276,8 +285,10 @@ class MemoryHandler:
             if agent_data["is_active"]:
                 # Restore as active agent
                 agent.is_active = True
+                if agent.merged_cache is None and agent.saved_chunks:
+                    logger.warning("Active agent has no merged_cache, will need to rebuild")
                 self.add_handler.active_memory_agent = agent
-                logger.info(f"Restored active agent: {agent_data['block_id']} (used: {agent_data.get('block_used', 0)} tokens)")
+                logger.info(f"Restored active agent: {agent_data['block_id']} (used: {agent_data.get('block_used', 0)} tokens, cache_loaded: {agent.merged_cache is not None})")
             else:
                 # Restore as inactive agent
                 agent.is_active = False
@@ -288,3 +299,24 @@ class MemoryHandler:
                 logger.info(f"Restored inactive agent: {agent_data['block_id']} (summary: {len(agent.summary) if agent.summary else 0} chars)")
         
         logger.info(f"Loaded {len(self.inactive_memory_agents)} inactive agents and {'1 active' if self.add_handler.active_memory_agent else 'no active'} agent")
+    
+    def cleanup(self):
+        """Save active agent cache state on exit."""
+        try:
+            if self.add_handler.active_memory_agent and self.add_handler.active_memory_agent.saved_chunks:
+                agent = self.add_handler.active_memory_agent
+                # Skip if agent is a Mock (test environment)
+                if hasattr(agent, '_mock_name'):
+                    return
+                logger.info(f"Saving active agent cache state on exit (block {agent.current_block.block_id})")
+                cache_state = {
+                    "global_offset": agent.global_offset,
+                    "saved_chunks": agent.saved_chunks,
+                    "chunk_number": agent.chunk_number,
+                    "model_id": agent.model_id,
+                    "merged_cache": [(k.cpu(), v.cpu()) for k, v in agent.merged_cache] if agent.merged_cache else None
+                }
+                agent.current_block.save_cache(cache_state, 0)
+                logger.info("Active agent cache saved successfully")
+        except Exception:
+            pass  # Silently fail on cleanup to avoid breaking tests

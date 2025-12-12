@@ -16,10 +16,23 @@ kv_data/
 # Text cache data
 text_data/
 
-# Configuration
-config.py
+# Configuration (user-specific)
+config.yaml
+
+# Evaluation outputs
+evaluation/locomo/logs/
+evaluation/locomo/results/
+evaluation/locomo/kv_data/
+evaluation/locomo/text_data/
 
 # Test coverage
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Misc
+nohup.out
+
+
+# ruff cache
+.ruff_cache/

@@ -81,3 +81,8 @@ dependencies = [
     "typing-inspection==0.4.2",
     "urllib3==2.5.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.0",
+]

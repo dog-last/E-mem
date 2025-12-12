@@ -8,8 +8,6 @@ from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 from nltk.translate.meteor_score import meteor_score
 from rouge_score import rouge_scorer
 from sentence_transformers import SentenceTransformer
-from sentence_transformers.util import pytorch_cos_sim
-import re
 
 # Download required NLTK data
 try:

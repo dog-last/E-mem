@@ -5,62 +5,50 @@ Evaluation framework for testing the memory system on the LoComo dataset.
 ## Structure
 
 ```
-evaluation/
-├── config.yaml          # Configuration file
+evaluation/locomo/
 ├── eval_locomo.py       # Main evaluation script
 ├── load_dataset.py      # Dataset loader
 ├── utils.py             # Evaluation metrics
-├── run_eval.sh          # Bash script for running evaluation
-├── test_setup.py        # Setup verification script
-├── logs/                # Evaluation logs (auto-created)
-└── results/             # Evaluation results (auto-created)
+├── eval_data/           # Dataset files
+├── logs/                # Logs (auto-created, gitignored)
+├── results/             # Results (auto-created, gitignored)
+├── kv_data/             # KV cache (auto-created, gitignored)
+└── text_data/           # Text storage (auto-created, gitignored)
 ```
-
-**Note**: The `logs/` and `results/` directories are automatically created by the evaluation script when needed.
 
 ## Configuration
 
-Edit `config.yaml` to configure:
+Edit `config.yaml` in the project root to configure:
 
 - **Model settings**: model_id, context window, device settings
-- **Memory settings**: cache behavior, router prompts
+- **Memory settings**: storage mode, cache behavior, router prompts
 - **Evaluation settings**: dataset path, output directory, ratio
 - **Auto-save settings**: 
   - `conversation_auto_save`: Enable/disable auto-save for conversation turns
   - QA questions NEVER use auto_save (hardcoded)
 
-## Setup
-
-First, verify your setup:
-
-```bash
-uv run python evaluation/test_setup.py
-```
-
-This will check if all dependencies are installed and directories can be created.
-
 ## Usage
 
-### Using the bash script (recommended for WSL):
+### Using the bash script (recommended):
 
 ```bash
-# Basic usage with default config
-bash evaluation/run_eval.sh
+# Run from project root
+bash scripts/run_eval.sh
 
 # With custom config
-bash evaluation/run_eval.sh --config evaluation/config.yaml
+bash scripts/run_eval.sh --config config.yaml
 
 # Override specific settings
-bash evaluation/run_eval.sh --model_id "Qwen/Qwen2.5-7B-Instruct" --ratio 0.1
+bash scripts/run_eval.sh --model_id "Qwen/Qwen3-1.7B" --ratio 0.1
 
 # Enable auto-save for conversation turns
-bash evaluation/run_eval.sh --conversation_auto_save
+bash scripts/run_eval.sh --conversation_auto_save
 
 # Full example
-bash evaluation/run_eval.sh \
-    --config evaluation/config.yaml \
-    --model_id "Qwen/Qwen2.5-7B-Instruct" \
-    --dataset "../locomo10_origin.json" \
+bash scripts/run_eval.sh \
+    --config config.yaml \
+    --model_id "Qwen/Qwen3-1.7B" \
+    --dataset "evaluation/locomo/eval_data/locomo10.json" \
     --ratio 0.5 \
     --conversation_auto_save
 ```
@@ -68,20 +56,20 @@ bash evaluation/run_eval.sh \
 ### Using Python directly:
 
 ```bash
-# Basic usage
-uv run python evaluation/eval_locomo.py
+# Run from project root
+python evaluation/locomo/eval_locomo.py
 
 # With arguments
-uv run python evaluation/eval_locomo.py \
-    --config evaluation/config.yaml \
-    --model_id "Qwen/Qwen2.5-7B-Instruct" \
+python evaluation/locomo/eval_locomo.py \
+    --config config.yaml \
+    --model_id "Qwen/Qwen3-1.7B" \
     --ratio 0.1 \
     --conversation_auto_save
 ```
 
 ## Arguments
 
-- `--config`: Path to config file (default: `evaluation/config.yaml`)
+- `--config`: Path to config file (default: `config.yaml`)
 - `--model_id`: Override model ID from config
 - `--dataset`: Override dataset path from config
 - `--ratio`: Override evaluation ratio (0.0-1.0)
@@ -102,8 +90,8 @@ uv run python evaluation/eval_locomo.py \
 ## Output
 
 Results are saved to:
-- `evaluation/results/locomo_eval_<timestamp>.json` - Evaluation results
-- `evaluation/logs/eval_<timestamp>.log` - Detailed logs
+- `evaluation/locomo/results/locomo_eval_<timestamp>.json` - Evaluation results
+- `evaluation/locomo/logs/eval_<timestamp>.log` - Detailed logs
 
 ## Metrics
 
@@ -113,7 +101,6 @@ The evaluation calculates:
 - ROUGE (1, 2, L)
 - BLEU (1, 2, 3, 4)
 - METEOR
-- Sentence-BERT Similarity
 
 Metrics are aggregated:
 - Overall (all questions)

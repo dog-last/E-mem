@@ -45,7 +45,7 @@ def mock_logger():
 
 @pytest.fixture
 def mock_samples():
-    from evaluation.load_dataset import QA, Conversation, Sample, Session, Turn
+    from evaluation.locomo.load_dataset import QA, Conversation, Sample, Session, Turn
     
     turn = Turn(speaker="A", dia_id="D1:1", text="Test conversation")
     session = Session(date_time="2023-01-01", turns=[turn])
@@ -65,7 +65,7 @@ def mock_samples():
 
 class TestSetupLogger:
     def test_setup_logger_basic(self, tmp_path):
-        from evaluation.eval_locomo import setup_logger
+        from evaluation.locomo.eval_locomo import setup_logger
         
         log_file = str(tmp_path / "test.log")
         logger = setup_logger(log_file)
@@ -79,13 +79,13 @@ class TestSetupLogger:
 
 
 class TestEvaluateDataset:
-    @patch('evaluation.eval_locomo.load_locomo_dataset')
-    @patch('evaluation.eval_locomo.create_chat_manager')
-    @patch('evaluation.eval_locomo.calculate_metrics')
+    @patch('evaluation.locomo.eval_locomo.load_locomo_dataset')
+    @patch('evaluation.locomo.eval_locomo.create_chat_manager')
+    @patch('evaluation.locomo.eval_locomo.calculate_metrics')
     def test_evaluate_dataset_basic(self, mock_calc_metrics, mock_create_chat_manager, 
                                     mock_load_dataset, mock_config, mock_logger, 
                                     mock_samples, tmp_path):
-        from evaluation.eval_locomo import evaluate_dataset
+        from evaluation.locomo.eval_locomo import evaluate_dataset
 
         # Setup mocks
         mock_load_dataset.return_value = mock_samples
@@ -115,11 +115,11 @@ class TestEvaluateDataset:
         assert 'individual_results' in results
         assert len(results['individual_results']) == 3
     
-    @patch('evaluation.eval_locomo.load_locomo_dataset')
-    @patch('evaluation.eval_locomo.create_chat_manager')
+    @patch('evaluation.locomo.eval_locomo.load_locomo_dataset')
+    @patch('evaluation.locomo.eval_locomo.create_chat_manager')
     def test_evaluate_dataset_with_ratio(self, mock_create_chat_manager, mock_load_dataset,
                                          mock_config, mock_logger, mock_samples):
-        from evaluation.eval_locomo import evaluate_dataset
+        from evaluation.locomo.eval_locomo import evaluate_dataset
 
         # Create multiple samples
         mock_load_dataset.return_value = mock_samples * 10
@@ -130,7 +130,7 @@ class TestEvaluateDataset:
         mock_agent.last_queried_memory = "Test memory"
         mock_create_chat_manager.return_value = mock_agent
         
-        with patch('evaluation.eval_locomo.calculate_metrics') as mock_calc:
+        with patch('evaluation.locomo.eval_locomo.calculate_metrics') as mock_calc:
             mock_calc.return_value = {'f1': 0.5, 'exact_match': 0}
             with patch('builtins.open', create=True):
                 evaluate_dataset(mock_config, mock_logger)
@@ -138,13 +138,13 @@ class TestEvaluateDataset:
         # Should only process 1 sample (10 * 0.1 = 1)
         assert mock_create_chat_manager.call_count == 1
     
-    @patch('evaluation.eval_locomo.load_locomo_dataset')
-    @patch('evaluation.eval_locomo.create_chat_manager')
-    @patch('evaluation.eval_locomo.calculate_metrics')
+    @patch('evaluation.locomo.eval_locomo.load_locomo_dataset')
+    @patch('evaluation.locomo.eval_locomo.create_chat_manager')
+    @patch('evaluation.locomo.eval_locomo.calculate_metrics')
     def test_category_5_handling(self, mock_calc_metrics, mock_create_chat_manager,
                                  mock_load_dataset, mock_config, mock_logger, 
                                  mock_samples):
-        from evaluation.eval_locomo import evaluate_dataset
+        from evaluation.locomo.eval_locomo import evaluate_dataset
         
         mock_load_dataset.return_value = mock_samples
         mock_agent = Mock()
@@ -161,11 +161,11 @@ class TestEvaluateDataset:
         assert len(cat5_results) == 1
         assert "Not mentioned" in cat5_results[0]['reference']
     
-    @patch('evaluation.eval_locomo.load_locomo_dataset')
-    @patch('evaluation.eval_locomo.create_chat_manager')
+    @patch('evaluation.locomo.eval_locomo.load_locomo_dataset')
+    @patch('evaluation.locomo.eval_locomo.create_chat_manager')
     def test_conversation_auto_save(self, mock_create_chat_manager, mock_load_dataset,
                                     mock_config, mock_logger, mock_samples):
-        from evaluation.eval_locomo import evaluate_dataset
+        from evaluation.locomo.eval_locomo import evaluate_dataset
         
         mock_load_dataset.return_value = mock_samples
         mock_agent = Mock()
@@ -176,7 +176,7 @@ class TestEvaluateDataset:
         # Enable auto_save for conversations
         mock_config['evaluation']['conversation_auto_save'] = True
         
-        with patch('evaluation.eval_locomo.calculate_metrics') as mock_calc:
+        with patch('evaluation.locomo.eval_locomo.calculate_metrics') as mock_calc:
             mock_calc.return_value = {'f1': 0.5}
             with patch('builtins.open', create=True):
                 evaluate_dataset(mock_config, mock_logger)
@@ -188,15 +188,15 @@ class TestEvaluateDataset:
 
 
 class TestMain:
-    @patch('evaluation.eval_locomo.evaluate_dataset')
-    @patch('evaluation.eval_locomo.setup_logger')
+    @patch('evaluation.locomo.eval_locomo.evaluate_dataset')
+    @patch('evaluation.locomo.eval_locomo.setup_logger')
     @patch('builtins.open')
-    @patch('evaluation.eval_locomo.yaml.safe_load')
+    @patch('evaluation.locomo.eval_locomo.yaml.safe_load')
     def test_main_basic(self, mock_yaml_load, mock_open, mock_setup_logger,
                        mock_evaluate, mock_config):
         import sys
 
-        from evaluation.eval_locomo import main
+        from evaluation.locomo.eval_locomo import main
         
         mock_yaml_load.return_value = mock_config
         mock_logger = Mock()

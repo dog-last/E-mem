@@ -1,62 +1,62 @@
 # Quick Start: Text Storage Mode
 
-## 30秒快速开始
+## 30-Second Start
 
 ```python
 from src.conversation_manager.factory import create_chat_manager
 
-# 创建Text Storage模式的ChatManager
+# Create Text Storage mode ChatManager
 manager = create_chat_manager(
-    storage_mode="text",  # 选择text模式
-    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    storage_mode="text",
+    model_id="Qwen/Qwen3-4B",
     openai_config={
         "api_key": "your-openai-api-key",
-        "base_url": "https://api.openai.com/v1"  # 可选
+        "base_url": "https://api.openai.com/v1"
     }
 )
 
-# 添加记忆
+# Add memory
 manager.chat("My name is Alice and I love Python.", auto_save=True)
 
-# 查询记忆
+# Query memory
 response = manager.chat("What is my name?")
 print(response)
 ```
 
-## 切换到KV Cache模式
+## Switch to KV Cache Mode
 
-只需修改一个参数：
+Just change one parameter:
 
 ```python
 manager = create_chat_manager(
-    storage_mode="kv_cache",  # 改为kv_cache
-    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    storage_mode="kv_cache",  # Change to kv_cache
+    model_id="Qwen/Qwen3-4B",
     openai_config={"api_key": "your-key"}
 )
 ```
 
-## 完整示例
+## Complete Example
 
 ```python
 from src.conversation_manager.factory import create_chat_manager
 
-# 初始化
+# Initialize
 manager = create_chat_manager(
     storage_mode="text",
-    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    model_id="Qwen/Qwen3-4B",
     openai_config={"api_key": "sk-xxx"},
-    clean_cache_first=True,  # 清空旧缓存
+    clean_cache_first=True,
     model_context_window=32768
 )
 
-# 场景1：自动保存模式
+# Scenario 1: Auto-save mode
 manager.chat("I work at Google as a software engineer.", auto_save=True)
 manager.chat("My favorite programming language is Rust.", auto_save=True)
 
-# 场景2：让LLM决定是否保存
+# Scenario 2: Let LLM decide whether to save
 manager.chat("Remember that my birthday is on March 15th.")
 
-# 场景3：查询记忆
+# Scenario 3: Query memory
 response = manager.chat("Where do I work?")
 print(response)
 
@@ -64,49 +64,49 @@ response = manager.chat("What's my favorite language?")
 print(response)
 ```
 
-## 配置说明
+## Configuration
 
-### 必需参数
-- `storage_mode`: `"text"` 或 `"kv_cache"`
-- `model_id`: HuggingFace模型ID（用于tokenizer）
-- `openai_config`: OpenAI API配置
+### Required Parameters
+- `storage_mode`: `"text"` or `"kv_cache"`
+- `model_id`: HuggingFace model ID (for tokenizer)
+- `openai_config`: OpenAI API configuration
 
-### 可选参数
-- `clean_cache_first`: 是否清空缓存（默认True）
-- `model_context_window`: 上下文窗口大小（默认32768）
-- `router_system_prompt`: 自定义Router提示词
+### Optional Parameters
+- `clean_cache_first`: Clear cache on startup (default: True)
+- `model_context_window`: Context window size (default: 32768)
+- `router_system_prompt`: Custom router prompt
 
-## 存储位置
+## Storage Location
 
-- Text模式：`./text_data/*.json`
-- KV Cache模式：`./kv_data/*.pt`
+- Text mode: `./text_data/*.json`
+- KV Cache mode: `./kv_data/*.pt`
 
-## 运行示例
+## Run Examples
 
 ```bash
-# 运行完整示例
-python3 example_text_storage.py
+# Run complete example
+python examples/example_text_storage.py
 
-# 运行测试
-python3 test_text_storage.py
+# Run tests
+pytest tests/test_text_storage.py
 ```
 
-## 常见问题
+## FAQ
 
-**Q: 两种模式可以同时使用吗？**  
-A: 可以，它们使用不同的存储目录，互不干扰。
+**Q: Can both modes be used simultaneously?**  
+A: Yes, they use different storage directories and don't interfere with each other.
 
-**Q: 如何清空缓存？**  
-A: 设置 `clean_cache_first=True` 或手动删除 `text_data/` 目录。
+**Q: How to clear cache?**  
+A: Set `clean_cache_first=True` or manually delete the `text_data/` directory.
 
-**Q: Text模式需要GPU吗？**  
-A: 不需要，仅需要OpenAI API密钥。
+**Q: Does Text mode require GPU?**  
+A: No, only OpenAI API key is required.
 
-**Q: 哪种模式更快？**  
-A: KV Cache模式更快，但需要GPU。Text模式适合无GPU环境。
+**Q: What are the main differences?**  
+A: KV Cache mode requires GPU and stores binary tensors. Text mode uses API calls and stores JSON files.
 
-## 下一步
+## Next Steps
 
-- 查看 `TEXT_STORAGE_README.md` 了解详细架构
-- 查看 `IMPLEMENTATION_SUMMARY.md` 了解实现细节
-- 运行 `example_text_storage.py` 查看完整示例
+- See [TEXT_STORAGE_README.md](TEXT_STORAGE_README.md) for detailed architecture
+- See [ARCHITECTURE_COMPARISON.md](ARCHITECTURE_COMPARISON.md) for comparison
+- Run `examples/example_text_storage.py` for complete example

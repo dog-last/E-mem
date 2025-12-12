@@ -1,9 +1,11 @@
 """Quick prompt testing script for category 2 questions."""
 import sys
 from pathlib import Path
+
 sys.path.append(str(Path(__file__).parent.parent))
 
 from openai import OpenAI
+
 from evaluation.utils import calculate_metrics
 
 # Mock memory result (replace with your actual search result)

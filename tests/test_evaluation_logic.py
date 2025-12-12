@@ -7,8 +7,8 @@ import pytest
 os.environ.setdefault('HF_HOME', '/mnt/d/AI')
 os.environ.setdefault('HF_ENDPOINT', 'https://hf-mirror.com')
 
-from evaluation.load_dataset import QA, load_locomo_dataset
-from evaluation.utils import calculate_metrics
+from evaluation.locomo.load_dataset import QA, load_locomo_dataset
+from evaluation.locomo.utils import calculate_metrics
 
 
 class TestReferenceAnswerSelection:
@@ -73,7 +73,7 @@ class TestMetricsCalculation:
 class TestCategory5Handling:
     @pytest.fixture
     def dataset_path(self):
-        path = Path(__file__).parent.parent / "evaluation" / "eval_data" / "locomo10_part1.json"
+        path = Path(__file__).parent.parent / "evaluation" / "locomo" / "eval_data" / "locomo10_part1.json"
         if not path.exists():
             pytest.skip(f"Dataset not found: {path}")
         return str(path)

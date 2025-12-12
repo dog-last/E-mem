@@ -11,15 +11,15 @@ from pathlib import Path
 
 import yaml
 
-# Add parent directory to path
-sys.path.append(str(Path(__file__).parent.parent))
+# Add project root to path
+sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from evaluation.load_dataset import (
+from evaluation.locomo.load_dataset import (
     filter_dataset_by_questions,
     load_locomo_dataset,
     load_specific_questions,
 )
-from evaluation.utils import (
+from evaluation.locomo.utils import (
     aggregate_metrics,
     calculate_metrics,
     extract_answer_from_xml,
@@ -64,7 +64,9 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
     # Load dataset
     dataset_path = config['evaluation']['dataset_path']
     if not os.path.isabs(dataset_path):
-        dataset_path = os.path.join(Path(__file__).parent, dataset_path)
+        # Path is relative to project root, not to this file
+        project_root = Path(__file__).parent.parent.parent
+        dataset_path = os.path.join(project_root, dataset_path)
     
     logger.info(f"Loading dataset from {dataset_path}")
     samples = load_locomo_dataset(dataset_path)
@@ -74,7 +76,8 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
     specific_questions_path = config['evaluation'].get('specific_questions_path')
     if specific_questions_path:
         if not os.path.isabs(specific_questions_path):
-            specific_questions_path = os.path.join(Path(__file__).parent, specific_questions_path)
+            project_root = Path(__file__).parent.parent.parent
+            specific_questions_path = os.path.join(project_root, specific_questions_path)
         
         logger.info(f"Loading specific questions from {specific_questions_path}")
         specific_questions = load_specific_questions(specific_questions_path)
@@ -348,7 +351,8 @@ Use DATE of CONVERSATION to answer with an approximate date. Write an answer in 
     timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M")
     output_dir = config['evaluation']['output_dir']
     if not os.path.isabs(output_dir):
-        output_dir = os.path.join(Path(__file__).parent, output_dir)
+        project_root = Path(__file__).parent.parent.parent
+        output_dir = os.path.join(project_root, output_dir)
     os.makedirs(output_dir, exist_ok=True)
     
     output_file = os.path.join(output_dir, f"locomo_eval_{timestamp}.json")
@@ -374,7 +378,7 @@ Use DATE of CONVERSATION to answer with an approximate date. Write an answer in 
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate on LoComo dataset")
-    parser.add_argument("--config", type=str, default="evaluation/config.yaml",
+    parser.add_argument("--config", type=str, default="config.yaml",
                        help="Path to config file")
     parser.add_argument("--model_id", type=str, help="Override model ID")
     parser.add_argument("--dataset", type=str, help="Override dataset path")
@@ -386,7 +390,7 @@ def main():
     # Load config
     config_path = args.config
     if not os.path.isabs(config_path):
-        config_path = os.path.join(Path(__file__).parent.parent, config_path)
+        config_path = os.path.join(Path(__file__).parent.parent.parent, config_path)
     
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
@@ -401,16 +405,17 @@ def main():
     if args.conversation_auto_save:
         config['evaluation']['conversation_auto_save'] = True
     
-    # Ensure directories exist
-    eval_dir = Path(__file__).parent
-    os.makedirs(eval_dir / 'logs', exist_ok=True)
-    os.makedirs(eval_dir / 'results', exist_ok=True)
+    # Ensure directories exist (relative to project root)
+    project_root = Path(__file__).parent.parent.parent
+    os.makedirs(project_root / 'evaluation' / 'locomo' / 'logs', exist_ok=True)
+    os.makedirs(project_root / 'evaluation' / 'locomo' / 'results', exist_ok=True)
     
     # Setup logging
     timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M")
     log_dir = config['logging']['log_dir']
     if not os.path.isabs(log_dir):
-        log_dir = os.path.join(Path(__file__).parent, log_dir)
+        project_root = Path(__file__).parent.parent.parent
+        log_dir = os.path.join(project_root, log_dir)
     os.makedirs(log_dir, exist_ok=True)
     
     log_file = os.path.join(log_dir, f"eval_{timestamp}.log")

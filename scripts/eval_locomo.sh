@@ -1,8 +1,16 @@
 #!/bin/bash
 # Evaluation script for LoComo dataset
 
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# Get project root (parent of scripts/)
+PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+
+# Change to project root
+cd "$PROJECT_ROOT" || exit 1
+
 # Default values
-CONFIG="./evaluation/config.yaml"
+CONFIG="config.yaml"
 MODEL_ID=""
 DATASET=""
 RATIO=""
@@ -38,8 +46,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Run evaluation
-uv run python eval_locomo.py \
+# Run evaluation from project root
+uv run python evaluation/locomo/eval_locomo.py \
     --config "$CONFIG" \
     $MODEL_ID \
     $DATASET \

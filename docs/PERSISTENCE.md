@@ -53,7 +53,7 @@ from src.conversation_manager.chat_handler import ChatManager
 
 # First run - creates new agents
 manager = ChatManager(
-    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    model_id="Qwen/Qwen3-4B",
     openai_config={"api_key": "your-key"},
     clean_cache_first=False  # Enable persistence
 )
@@ -66,7 +66,7 @@ manager.chat("My name is Alice.", auto_save=True)
 ```python
 # Second run - restores previous agents
 manager = ChatManager(
-    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    model_id="Qwen/Qwen3-4B",
     openai_config={"api_key": "your-key"},
     clean_cache_first=False  # Load existing agents
 )
@@ -81,7 +81,7 @@ response = manager.chat("What is my name?")
 ```python
 # Start fresh
 manager = ChatManager(
-    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    model_id="Qwen/Qwen3-4B",
     openai_config={"api_key": "your-key"},
     clean_cache_first=True  # Clear everything
 )
@@ -137,7 +137,7 @@ response = manager.chat("Where do I work?")
 
 Run persistence tests:
 ```bash
-python3 tests/test_persistence.py
+pytest tests/test_persistence.py
 ```
 
 ## Notes

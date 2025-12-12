@@ -5,7 +5,7 @@ A novel approach to LLM memory management using KV cache for efficient context h
 ## 🆕 NEW: Text Storage Mode
 
 Now supports **two storage backends**:
-- **KV Cache Mode** (default) - GPU-based, faster prefilling
+- **KV Cache Mode** (default) - GPU-based
 - **Text Storage Mode** (new) - API-based, no GPU required
 
 👉 See [docs/QUICKSTART_TEXT_STORAGE.md](docs/QUICKSTART_TEXT_STORAGE.md) for quick start guide
@@ -13,7 +13,7 @@ Now supports **two storage backends**:
 ## 🎯 Core Concept
 
 Instead of traditional RAG-based memory retrieval, this system:
-- **Stores memories as KV cache** - Faster prefilling compared to text re-encoding
+- **Stores memories as KV cache** - Reuses cached context
 - **Parallel memory agents** - Multiple agents handle different memory blocks
 - **Router-based selection** - Smart routing to relevant memory blocks using summaries
 - **Long/short-term memory** - Active agent for recent memories, inactive agents for historical data
@@ -71,7 +71,12 @@ MemoryHandler (Orchestrator)
 ## 🚀 Installation
 
 ```bash
+# Install dependencies
 pip install -r requirements.txt
+
+# Setup configuration
+cp config.example.yaml config.yaml
+# Edit config.yaml with your settings
 ```
 
 ## 📖 Usage
@@ -83,7 +88,7 @@ from src.conversation_manager.chat_handler import ChatManager
 
 # Initialize
 chat_manager = ChatManager(
-    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    model_id="Qwen/Qwen3-4B",
     openai_config={"api_key": "your-key"},
     clean_cache_first=True
 )
@@ -103,14 +108,14 @@ from src.conversation_manager.factory import create_chat_manager
 # KV Cache mode (GPU required)
 kv_manager = create_chat_manager(
     storage_mode="kv_cache",
-    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    model_id="Qwen/Qwen3-4B",
     openai_config={"api_key": "your-key"}
 )
 
 # Text Storage mode (No GPU required)
 text_manager = create_chat_manager(
     storage_mode="text",
-    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    model_id="Qwen/Qwen3-4B",
     openai_config={"api_key": "your-key"}
 )
 ```
@@ -118,11 +123,9 @@ text_manager = create_chat_manager(
 ### Run Examples
 
 ```bash
-# KV Cache mode
-python main.py
-
-# Text Storage mode
-python examples/example_text_storage.py
+python examples/quickstart.py              # Quick start
+python examples/example_text_storage.py    # Text storage mode
+python examples/example_simple.py          # Simple example
 ```
 
 ## 🔧 Configuration
@@ -157,7 +160,7 @@ chat_manager = ChatManager(
 
 1. **No Traditional Retrieval** - Avoids embedding-based search inaccuracies
 2. **Full Context Understanding** - LLM sees complete memory, not fragments
-3. **Efficient Prefilling** - KV cache reuse speeds up context loading (KV Cache mode)
+3. **KV Cache Reuse** - Cached context for efficient memory access (KV Cache mode)
 4. **Scalable** - Parallel agents handle growing memory
 5. **Minimal Components** - Pure LLM-based, no external vector DBs
 6. **Flexible Deployment** - Choose between GPU (KV Cache) or API (Text Storage)
@@ -178,26 +181,27 @@ chat_manager = ChatManager(
 
 ```
 mem-with-kv-cache/
-├── src/
-│   ├── agent/
-│   │   └── base.py              # Base agent with tool calling
-│   ├── conversation_manager/
-│   │   ├── chat_handler.py      # User interface
-│   │   └── user_loop.py         # (Optional) CLI loop
-│   ├── memory/
-│   │   ├── core/
-│   │   │   └── loop_handler.py  # Memory orchestration
-│   │   ├── kv_block_manager/
-│   │   │   └── block.py         # KV cache storage
-│   │   ├── memory_agent/
-│   │   │   └── agent.py         # Memory agent logic
-│   │   └── router/
-│   │       └── router.py        # LLM-based router
-│   └── utils/
-│       └── prompt.py            # System prompts
-├── main.py                      # Entry point
-├── requirements.txt
-└── README.md
+├── src/                         # Core source code
+│   ├── agent/                   # Base agent with tool calling
+│   ├── conversation_manager/    # Chat interface & factory
+│   ├── memory/                  # Memory management (KV cache & text storage)
+│   └── utils/                   # Utilities & prompts
+├── examples/                    # Example scripts
+│   ├── quickstart.py            # Quick start example
+│   ├── example_text_storage.py  # Text storage example
+│   └── example_simple.py        # Simple example
+├── evaluation/locomo/           # LoComo dataset evaluation
+│   ├── eval_locomo.py           # Main evaluation script
+│   ├── load_dataset.py          # Dataset loader
+│   ├── utils.py                 # Evaluation metrics
+│   └── eval_data/               # Dataset files
+├── scripts/                     # Utility scripts
+│   └── run_eval.sh              # Evaluation runner
+├── tests/                       # Unit tests
+├── docs/                        # Documentation
+├── config.yaml                  # Main config (gitignored)
+├── config.example.yaml          # Config template
+└── config.py                    # Config loader
 ```
 
 ## 🔬 Technical Details
@@ -226,11 +230,33 @@ mem-with-kv-cache/
 
 ## 📚 Documentation
 
-- [docs/QUICKSTART_TEXT_STORAGE.md](docs/QUICKSTART_TEXT_STORAGE.md) - Quick start for Text Storage mode
-- [docs/TEXT_STORAGE_README.md](docs/TEXT_STORAGE_README.md) - Detailed Text Storage documentation
-- [docs/ARCHITECTURE_COMPARISON.md](docs/ARCHITECTURE_COMPARISON.md) - Architecture comparison
-- [docs/IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md) - Implementation details
-- [docs/PERSISTENCE.md](docs/PERSISTENCE.md) - KV Cache persistence guide
+- [docs/README.md](docs/README.md) - Complete documentation
+- [docs/QUICKSTART_TEXT_STORAGE.md](docs/QUICKSTART_TEXT_STORAGE.md) - Text storage quick start
+- [docs/ARCHITECTURE_COMPARISON.md](docs/ARCHITECTURE_COMPARISON.md) - KV Cache vs Text Storage
+- [docs/PERSISTENCE.md](docs/PERSISTENCE.md) - KV cache persistence
+- [evaluation/locomo/README.md](evaluation/locomo/README.md) - Evaluation guide
+
+## 🧪 Testing
+
+```bash
+pytest tests/                      # All tests
+pytest tests/test_memory_agent.py  # Specific test
+```
+
+## 📂 Import Paths
+
+```python
+# Core components
+from src.conversation_manager.factory import create_chat_manager
+from src.conversation_manager.chat_handler import ChatManager
+
+# Evaluation
+from evaluation.locomo.load_dataset import load_locomo_dataset
+from evaluation.locomo.utils import calculate_metrics
+
+# Configuration
+from config import MAX_CONCURRENT_GPU_OPERATIONS, DEFAULT_OVERLAP_RATIO
+```
 
 ## 📝 License
 
