@@ -82,6 +82,15 @@ class MemoryAgent:
             )
             # Load state from disk
             cache_state = self.current_block.load_cache()
+            
+            # Validate model_id compatibility
+            cached_model_id = cache_state.get("model_id")
+            if cached_model_id and cached_model_id != model_id:
+                raise ValueError(
+                    f"Model mismatch: cache was created with '{cached_model_id}' but trying to load with '{model_id}'. "
+                    f"KV cache dimensions are incompatible between different models. Please use clean_cache_first=True or use the same model."
+                )
+            
             self.global_offset = cache_state.get("global_offset", 0)
             self.saved_chunks = cache_state.get("saved_chunks", [])
             self.chunk_number = cache_state.get("chunk_number", 0)
@@ -292,6 +301,15 @@ class MemoryAgent:
                 else:
                     # Fallback: load from disk (slower path)
                     cache_state = self.current_block.load_cache()
+                    
+                    # Validate model_id before loading cache
+                    cached_model_id = cache_state.get("model_id")
+                    if cached_model_id and cached_model_id != self.model_id:
+                        raise ValueError(
+                            f"Model mismatch: cache was created with '{cached_model_id}' but trying to load with '{self.model_id}'. "
+                            f"KV cache dimensions are incompatible between different models."
+                        )
+                    
                     if "merged_cache" in cache_state and cache_state["merged_cache"]:
                         logger.info(f"Loading cache from disk for inactive agent (block {self.current_block.block_id})")
                         base_cache = DynamicCache()
@@ -439,6 +457,14 @@ class MemoryAgent:
             return  # Already loaded or active
         
         cache_state = self.current_block.load_cache()
+        
+        # Validate model_id before preloading
+        cached_model_id = cache_state.get("model_id")
+        if cached_model_id and cached_model_id != self.model_id:
+            logger.error(f"Model mismatch during preload: cache '{cached_model_id}' vs current '{self.model_id}'")
+            self._cpu_cache = None
+            return
+        
         if "merged_cache" in cache_state and cache_state["merged_cache"]:
             logger.debug(f"Pre-loaded cache to CPU for block {self.current_block.block_id}")
             # Store in CPU memory, will transfer to GPU during generation

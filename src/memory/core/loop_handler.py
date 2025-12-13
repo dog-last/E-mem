@@ -224,13 +224,21 @@ class MemoryHandler:
     
     def _save_metadata(self):
         """Save all agents metadata to disk."""
-        agents_data = []
+        # Load existing metadata to preserve other models' blocks
+        all_metadata = load_agents_metadata()
+        
+        # Remove entries for current model
+        other_models_metadata = [m for m in all_metadata if m.get("model_id") != self.model_id]
+        
+        # Build current model's metadata
+        current_model_metadata = []
         
         # Save inactive agents (with summary)
         for agent in self.inactive_memory_agents:
-            agents_data.append({
+            current_model_metadata.append({
                 "block_id": str(agent.current_block.block_id),
                 "timestamp": agent.current_block.create_timestamp,
+                "model_id": agent.model_id,
                 "summary": agent.summary,
                 "is_active": False,
                 "block_used": agent.current_block.block_used,
@@ -242,17 +250,20 @@ class MemoryHandler:
             agent = self.add_handler.active_memory_agent
             # Skip if agent is a Mock (test environment)
             if not hasattr(agent, '_mock_name'):
-                agents_data.append({
+                current_model_metadata.append({
                     "block_id": str(agent.current_block.block_id),
                     "timestamp": agent.current_block.create_timestamp,
+                    "model_id": agent.model_id,
                     "summary": None,  # Active agent doesn't have summary yet
                     "is_active": True,
                     "block_used": agent.current_block.block_used,
                     "chunk_number": agent.chunk_number
                 })
         
-        save_agents_metadata(agents_data)
-        logger.info(f"Saved metadata for {len(agents_data)} agents ({len(self.inactive_memory_agents)} inactive, {'1 active' if self.add_handler.active_memory_agent else '0 active'})")
+        # Merge: other models + current model
+        final_metadata = other_models_metadata + current_model_metadata
+        save_agents_metadata(final_metadata)
+        logger.info(f"Saved metadata: {len(current_model_metadata)} for current model ({self.model_id}), {len(other_models_metadata)} for other models, total {len(final_metadata)}")
     
     def _load_existing_agents(self):
         """Load existing agents from metadata."""
@@ -261,9 +272,16 @@ class MemoryHandler:
             logger.info("No existing agents found")
             return
         
-        logger.info(f"Loading {len(metadata)} existing agents")
+        # Filter agents for current model only
+        current_model_metadata = [m for m in metadata if m.get("model_id") == self.model_id]
+        other_models_count = len(metadata) - len(current_model_metadata)
         
-        for agent_data in metadata:
+        if other_models_count > 0:
+            logger.info(f"Found {len(metadata)} total agents: {len(current_model_metadata)} for current model ({self.model_id}), {other_models_count} for other models (skipped)")
+        else:
+            logger.info(f"Loading {len(current_model_metadata)} agents for model {self.model_id}")
+        
+        for agent_data in current_model_metadata:
             # Recreate agent
             agent = MemoryAgent(
                 model_id=self.model_id,

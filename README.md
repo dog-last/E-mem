@@ -128,7 +128,6 @@ text_manager = create_chat_manager(
 ```bash
 python examples/quickstart.py              # Quick start
 python examples/example_text_storage.py    # Text storage mode
-python examples/example_simple.py          # Simple example
 ```
 
 ## 🔧 Configuration
@@ -237,6 +236,7 @@ mem-with-kv-cache/
 - [docs/QUICKSTART_TEXT_STORAGE.md](docs/QUICKSTART_TEXT_STORAGE.md) - Text storage quick start
 - [docs/ARCHITECTURE_COMPARISON.md](docs/ARCHITECTURE_COMPARISON.md) - KV Cache vs Text Storage
 - [docs/PERSISTENCE.md](docs/PERSISTENCE.md) - KV cache persistence
+- [docs/MODEL_COMPATIBILITY.md](docs/MODEL_COMPATIBILITY.md) - Model compatibility and migration
 - [evaluation/locomo/README.md](evaluation/locomo/README.md) - Evaluation guide
 
 ## 🧪 Testing
