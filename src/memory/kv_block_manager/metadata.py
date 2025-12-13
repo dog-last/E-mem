@@ -21,6 +21,19 @@ def load_agents_metadata() -> List[Dict]:
 
 
 def clear_metadata():
-    """Clear metadata file."""
-    if os.path.exists(METADATA_FILE):
-        os.remove(METADATA_FILE)
+    """Clear metadata for current session only."""
+    if not os.path.exists(METADATA_FILE):
+        return
+    
+    # Get session_id from environment
+    session_id = os.environ.get('EVAL_SESSION_ID', 'default')
+    
+    # Load all metadata
+    all_metadata = load_agents_metadata()
+    
+    # Keep only metadata from other sessions
+    other_sessions_metadata = [m for m in all_metadata if m.get("session_id") != session_id]
+    
+    # Save back
+    save_agents_metadata(other_sessions_metadata)
+    print(f"Cleared metadata for session: {session_id}")

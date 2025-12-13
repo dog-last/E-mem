@@ -237,8 +237,13 @@ class MemoryAgent:
         if block_full:
             logger.info("Memory agent became inactive, creating summaries")
             self.is_active = False
-            self._create_summaries()
-            logger.info("Summaries created successfully")
+            try:
+                self._create_summaries()
+                logger.info("Summaries created successfully")
+            except Exception as e:
+                logger.error(f"Failed to create summaries: {e}", exc_info=True)
+                # Keep is_active=False, summary will be None
+                # Agent can still be queried but without summary for router
 
     def _create_summaries(self):
         """

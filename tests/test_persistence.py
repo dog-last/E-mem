@@ -11,9 +11,27 @@ from src.memory.kv_block_manager.metadata import (
 @pytest.fixture(autouse=True)
 def cleanup():
     """Cleanup metadata before and after each test."""
-    clear_metadata()
+    import os
+
+    # Set unique test session_id for each test
+    import uuid
+    test_session = f'test_session_{uuid.uuid4().hex[:8]}'
+    os.environ['EVAL_SESSION_ID'] = test_session
+    
+    # Clear all metadata before test
+    from src.memory.kv_block_manager.metadata import METADATA_FILE
+    if os.path.exists(METADATA_FILE):
+        os.remove(METADATA_FILE)
+    
     yield
-    clear_metadata()
+    
+    # Clear all metadata after test
+    if os.path.exists(METADATA_FILE):
+        os.remove(METADATA_FILE)
+    
+    # Clean up env
+    if 'EVAL_SESSION_ID' in os.environ:
+        del os.environ['EVAL_SESSION_ID']
 
 
 def test_save_and_load_metadata():
@@ -49,10 +67,17 @@ def test_save_and_load_metadata():
 
 
 def test_clear_metadata():
-    """Test clearing metadata."""
+    """Test clearing metadata for current session only."""
+    import os
+
+    # Get current session from env (set by fixture)
+    current_session = os.environ.get('EVAL_SESSION_ID', 'test_session')
+    
     test_data = [{
         "block_id": "test",
         "timestamp": "test",
+        "model_id": "test-model",
+        "session_id": current_session,
         "summary": None,
         "is_active": True,
         "block_used": 0,
@@ -63,6 +88,7 @@ def test_clear_metadata():
     clear_metadata()
     loaded_data = load_agents_metadata()
     
+    # Should be cleared (belongs to current session)
     assert len(loaded_data) == 0
 
 
@@ -88,6 +114,8 @@ def test_active_agent_metadata():
 
 
 def test_load_nonexistent_metadata():
-    """Test loading non-existent metadata."""
+    """Test loading non-existent metadata returns empty list."""
+    # Clear any existing metadata first
+    clear_metadata()
     loaded_data = load_agents_metadata()
     assert loaded_data == []

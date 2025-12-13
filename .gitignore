@@ -24,6 +24,10 @@ evaluation/locomo/logs/
 evaluation/locomo/results/
 evaluation/locomo/kv_data/
 evaluation/locomo/text_data/
+evaluation/ruler/results/
+evaluation/ruler/logs/
+evaluation/ruler/kv_data/
+evaluation/ruler/text_data/
 
 # Evaluation data
 */eval_data/

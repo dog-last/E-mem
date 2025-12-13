@@ -65,12 +65,32 @@ class KVBlock:
 
 
 def clear_cache():
-    """Clear all the kv cache file(pt file) stored in the data folder"""
+    """Clear kv cache files for current session only."""
     if not os.path.exists(KV_DATA_DIR):
         return
+    
+    # Get session_id from environment
+    session_id = os.environ.get('EVAL_SESSION_ID', 'default')
+    
+    # Load metadata to find which blocks belong to current session
+    from src.memory.kv_block_manager.metadata import load_agents_metadata
+    metadata = load_agents_metadata()
+    
+    # Get block_ids for current session
+    current_session_blocks = set()
+    for m in metadata:
+        if m.get("session_id") == session_id:
+            current_session_blocks.add(m.get("block_id"))
+    
+    # Delete only files belonging to current session
     for file in os.listdir(KV_DATA_DIR):
         if file.endswith(".pt"):
-            print(f"Deleting {file}")
-            os.remove(os.path.join(KV_DATA_DIR, file))
+            # Extract block_id from filename: kv_cache_{block_id}_{timestamp}.pt
+            parts = file.replace("kv_cache_", "").replace(".pt", "").split("_")
+            if parts:
+                block_id = parts[0]
+                if block_id in current_session_blocks:
+                    print(f"Deleting {file} (session: {session_id})")
+                    os.remove(os.path.join(KV_DATA_DIR, file))
         
 

@@ -132,25 +132,41 @@ class TestMemoryHandler:
         assert len(handler.inactive_memory_agents) == 0
     
     @patch("src.memory.core.loop_handler.save_agents_metadata")
+    @patch("src.memory.core.loop_handler.load_agents_metadata")
     @patch("src.memory.core.loop_handler.Router")
     @patch("src.memory.core.loop_handler.AddHandler")
-    def test_add_memory_becomes_inactive(self, mock_add_handler_class, mock_router_class, mock_save_meta):
+    def test_add_memory_becomes_inactive(self, mock_add_handler_class, mock_router_class, mock_load_meta, mock_save_meta):
         """Test adding memory when agent becomes inactive."""
+        import os
+        os.environ['EVAL_SESSION_ID'] = 'test_session'
+        mock_load_meta.return_value = []
+        
         mock_block = Mock()
         mock_block.block_id = "test-id"
         mock_block.create_timestamp = "20231201_120000"
         mock_block.block_used = 100
         mock_block.chunk_num = 5
         
+        # First agent (will become inactive)
         mock_agent = Mock()
-        mock_agent.is_active = False
+        mock_agent.is_active = True  # Start as active
         mock_agent.summary = "Test summary"
         mock_agent.current_block = mock_block
+        mock_agent.chunk_number = 5
+        mock_agent.model_id = "test-model"
+        mock_agent.saved_chunks = []
+        
+        # New agent (will be created)
+        mock_new_agent = Mock()
+        mock_new_agent.is_active = True
+        mock_new_agent.add = Mock()
         
         mock_add_handler = Mock()
+        # First call returns False (agent became inactive)
         mock_add_handler.add_memory.return_value = False
         mock_add_handler.active_memory_agent = mock_agent
         mock_add_handler.get_overlap_memories.return_value = []
+        mock_add_handler.create_agent = Mock(side_effect=lambda: setattr(mock_add_handler, 'active_memory_agent', mock_new_agent))
         mock_add_handler_class.return_value = mock_add_handler
         
         mock_router = Mock()
@@ -162,6 +178,9 @@ class TestMemoryHandler:
         assert len(handler.inactive_memory_agents) == 1
         mock_add_handler.create_agent.assert_called_once()
         mock_router.add_blocks.assert_called_once_with(mock_agent)
+        
+        if 'EVAL_SESSION_ID' in os.environ:
+            del os.environ['EVAL_SESSION_ID']
     
     @patch("src.memory.core.loop_handler.Router")
     @patch("src.memory.core.loop_handler.AddHandler")

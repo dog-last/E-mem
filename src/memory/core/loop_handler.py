@@ -1,5 +1,6 @@
 import atexit
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 from src.memory.kv_block_manager.block import clear_cache as clear_kv_cache
@@ -159,10 +160,31 @@ class MemoryHandler:
         if self.add_handler.active_memory_agent is None:
             self.add_handler.create_agent()
         
-        is_active = self.add_handler.add_memory(text)
+        # Check if agent is already inactive before calling add_memory
+        # This handles the case where previous call made agent inactive but transition failed
+        if not self.add_handler.active_memory_agent.is_active:
+            logger.warning("Active agent is already inactive, triggering transition before add")
+            # Move to inactive
+            self.inactive_memory_agents.append(self.add_handler.active_memory_agent)
+            self.query_handler.router.add_blocks(self.add_handler.active_memory_agent)
+            
+            # Get overlap memories
+            overlap_memories = self.add_handler.get_overlap_memories()
+            
+            # Create new agent
+            self.add_handler.active_memory_agent = None
+            self.add_handler.create_agent()
+            
+            # Add overlap memories
+            if overlap_memories:
+                for mem in overlap_memories:
+                    self.add_handler.active_memory_agent.add([mem])
+                logger.info(f"Added {len(overlap_memories)} overlap memories to new agent")
+            
+            # Clear overlap buffer
+            self.add_handler.clear_overlap_buffer()
         
-        # Save metadata after adding memory
-        self._save_metadata()
+        is_active = self.add_handler.add_memory(text)
         
         if not is_active:
             # Agent became full, move to inactive and create new one with overlap
@@ -187,6 +209,9 @@ class MemoryHandler:
             
             # Clear overlap buffer
             self.add_handler.clear_overlap_buffer()
+        
+        # Save metadata after handling agent transition
+        self._save_metadata()
 
     def query_memory(self, user_query: str) -> str:
         """
@@ -224,21 +249,27 @@ class MemoryHandler:
     
     def _save_metadata(self):
         """Save all agents metadata to disk."""
-        # Load existing metadata to preserve other models' blocks
+        # Load existing metadata to preserve other sessions' blocks
         all_metadata = load_agents_metadata()
         
-        # Remove entries for current model
-        other_models_metadata = [m for m in all_metadata if m.get("model_id") != self.model_id]
+        # Get session_id from environment
+        session_id = os.environ.get('EVAL_SESSION_ID', 'default')
         
-        # Build current model's metadata
-        current_model_metadata = []
+        # Remove entries for current model AND session
+        other_sessions_metadata = [m for m in all_metadata 
+                                   if not (m.get("model_id") == self.model_id and 
+                                          m.get("session_id") == session_id)]
+        
+        # Build current session's metadata
+        current_session_metadata = []
         
         # Save inactive agents (with summary)
         for agent in self.inactive_memory_agents:
-            current_model_metadata.append({
+            current_session_metadata.append({
                 "block_id": str(agent.current_block.block_id),
                 "timestamp": agent.current_block.create_timestamp,
                 "model_id": agent.model_id,
+                "session_id": session_id,
                 "summary": agent.summary,
                 "is_active": False,
                 "block_used": agent.current_block.block_used,
@@ -250,20 +281,21 @@ class MemoryHandler:
             agent = self.add_handler.active_memory_agent
             # Skip if agent is a Mock (test environment)
             if not hasattr(agent, '_mock_name'):
-                current_model_metadata.append({
+                current_session_metadata.append({
                     "block_id": str(agent.current_block.block_id),
                     "timestamp": agent.current_block.create_timestamp,
                     "model_id": agent.model_id,
-                    "summary": None,  # Active agent doesn't have summary yet
-                    "is_active": True,
+                    "session_id": session_id,
+                    "summary": agent.summary,  # Use actual summary (None for active, set for inactive)
+                    "is_active": agent.is_active,  # Use actual is_active status
                     "block_used": agent.current_block.block_used,
                     "chunk_number": agent.chunk_number
                 })
         
-        # Merge: other models + current model
-        final_metadata = other_models_metadata + current_model_metadata
+        # Merge: other sessions + current session
+        final_metadata = other_sessions_metadata + current_session_metadata
         save_agents_metadata(final_metadata)
-        logger.info(f"Saved metadata: {len(current_model_metadata)} for current model ({self.model_id}), {len(other_models_metadata)} for other models, total {len(final_metadata)}")
+        logger.info(f"Saved metadata: {len(current_session_metadata)} for current session ({self.model_id}, {session_id}), {len(other_sessions_metadata)} for other sessions, total {len(final_metadata)}")
     
     def _load_existing_agents(self):
         """Load existing agents from metadata."""
@@ -272,16 +304,21 @@ class MemoryHandler:
             logger.info("No existing agents found")
             return
         
-        # Filter agents for current model only
-        current_model_metadata = [m for m in metadata if m.get("model_id") == self.model_id]
-        other_models_count = len(metadata) - len(current_model_metadata)
+        # Get session_id from environment
+        session_id = os.environ.get('EVAL_SESSION_ID', 'default')
         
-        if other_models_count > 0:
-            logger.info(f"Found {len(metadata)} total agents: {len(current_model_metadata)} for current model ({self.model_id}), {other_models_count} for other models (skipped)")
+        # Filter agents for current model AND session only
+        current_session_metadata = [m for m in metadata 
+                                    if m.get("model_id") == self.model_id and 
+                                       m.get("session_id") == session_id]
+        other_sessions_count = len(metadata) - len(current_session_metadata)
+        
+        if other_sessions_count > 0:
+            logger.info(f"Found {len(metadata)} total agents: {len(current_session_metadata)} for current session ({self.model_id}, {session_id}), {other_sessions_count} for other sessions (skipped)")
         else:
-            logger.info(f"Loading {len(current_model_metadata)} agents for model {self.model_id}")
+            logger.info(f"Loading {len(current_session_metadata)} agents for session {session_id}")
         
-        for agent_data in current_model_metadata:
+        for agent_data in current_session_metadata:
             # Recreate agent
             agent = MemoryAgent(
                 model_id=self.model_id,

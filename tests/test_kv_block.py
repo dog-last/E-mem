@@ -61,17 +61,36 @@ class TestKVBlock:
         assert block.is_full()
     
     def test_clear_cache(self, temp_kv_dir, block_id, timestamp, sample_cache_state):
-        """Test clearing cache."""
+        """Test clearing cache for current session only."""
+        import uuid
+
+        # Set unique session_id for test
+        test_session = f'test_session_{uuid.uuid4().hex[:8]}'
+        os.environ['EVAL_SESSION_ID'] = test_session
+        
+        # Save metadata for current session
+        from src.memory.kv_block_manager.metadata import save_agents_metadata
+        save_agents_metadata([{
+            "block_id": str(block_id),
+            "timestamp": timestamp,
+            "model_id": "test-model",
+            "session_id": test_session,
+            "summary": None,
+            "is_active": True,
+            "block_used": 100,
+            "chunk_number": 2
+        }])
+        
         block1 = KVBlock(block_id=block_id, create_timestamp=timestamp, block_size=1000)
         block1.save_cache(sample_cache_state, 100)
         
-        block2 = KVBlock(block_id=block_id, create_timestamp=timestamp + "2", block_size=1000)
-        block2.save_cache(sample_cache_state, 100)
-        
         assert os.path.exists(block1.store_target)
-        assert os.path.exists(block2.store_target)
         
         clear_cache()
         
+        # Should be deleted (belongs to current session)
         assert not os.path.exists(block1.store_target)
-        assert not os.path.exists(block2.store_target)
+        
+        # Clean up
+        if 'EVAL_SESSION_ID' in os.environ:
+            del os.environ['EVAL_SESSION_ID']

@@ -73,10 +73,15 @@ class TestMetricsCalculation:
 class TestCategory5Handling:
     @pytest.fixture
     def dataset_path(self):
-        path = Path(__file__).parent.parent / "evaluation" / "eval_data" / "locomo10_part1.json"
-        if not path.exists():
-            pytest.skip(f"Dataset not found: {path}")
-        return str(path)
+        eval_data_dir = Path(__file__).parent.parent / "evaluation" / "eval_data" / "locomo"
+        if not eval_data_dir.exists():
+            pytest.skip(f"Dataset directory not found: {eval_data_dir}")
+        
+        json_files = list(eval_data_dir.glob("*.json"))
+        if not json_files:
+            pytest.skip(f"No JSON dataset files found in: {eval_data_dir}")
+        
+        return str(json_files[0])
     
     def test_category_5_has_reference(self, dataset_path):
         samples = load_locomo_dataset(dataset_path)

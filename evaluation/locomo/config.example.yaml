@@ -2,7 +2,7 @@
 
 # Model settings
 model:
-  model_id: "Qwen/Qwen3-4B"
+  model_id: "Qwen/Qwen3-4B-Instruct-2507"
   openai_config: {
     "api_key":"your api-key here",
     "base_url":"the base url here",
@@ -24,7 +24,7 @@ memory:
 
 # LoComo Evaluation settings
 locomo_eval:
-  dataset_path: "evaluation/eval_data/locomo/locomo10.json"
+  dataset_path: "evaluation/locomo/eval_data/locomo/locomo10.json"
   output_dir: "evaluation/locomo/results"
   ratio: 1.0  # Portion of dataset to evaluate (0.0-1.0)
   

@@ -61,6 +61,15 @@ def setup_logger(log_file: str) -> logging.Logger:
 
 def evaluate_dataset(config: dict, logger: logging.Logger):
     """Evaluate on LoComo dataset."""
+    # Generate unique session ID for this evaluation run
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_id = config['model']['model_id']
+    session_id = f"locomo_{os.path.basename(model_id)}_{timestamp}"
+    os.environ['EVAL_SESSION_ID'] = session_id
+    logger.info(f"Evaluation session ID: {session_id}")
+    logger.info("Note: Using session-specific metadata to support concurrent evaluations")
+    
     # Load dataset
     dataset_path = config['locomo_eval']['dataset_path']
     if not os.path.isabs(dataset_path):

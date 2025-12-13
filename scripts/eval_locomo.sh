@@ -10,7 +10,7 @@ PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 cd "$PROJECT_ROOT" || exit 1
 
 # Default values
-CONFIG="config.yaml"
+CONFIG="./evaluation/locomo/config.yaml"
 MODEL_ID=""
 DATASET=""
 RATIO=""
