@@ -72,7 +72,7 @@ class TestMetricsCalculation:
 
 class TestCategory5Handling:
     @pytest.fixture
-    def dataset_path(self):
+    def dataset_paths(self):
         eval_data_dir = Path(__file__).parent.parent / "evaluation" / "eval_data" / "locomo"
         if not eval_data_dir.exists():
             pytest.skip(f"Dataset directory not found: {eval_data_dir}")
@@ -81,23 +81,27 @@ class TestCategory5Handling:
         if not json_files:
             pytest.skip(f"No JSON dataset files found in: {eval_data_dir}")
         
-        return str(json_files[0])
+        return [str(f) for f in json_files]
     
-    def test_category_5_has_reference(self, dataset_path):
-        samples = load_locomo_dataset(dataset_path)
-        
+    def test_category_5_has_reference(self, dataset_paths):
         cat5_found = False
-        for sample in samples:
-            for qa in sample.qa:
-                if qa.category == 5:
-                    cat5_found = True
-                    reference = qa.adversarial_answer or qa.answer
-                    assert reference is not None
-                    
-                    metrics = calculate_metrics("Not mentioned", reference)
-                    assert isinstance(metrics, dict)
+        
+        for dataset_path in dataset_paths:
+            samples = load_locomo_dataset(dataset_path)
+            
+            for sample in samples:
+                for qa in sample.qa:
+                    if qa.category == 5:
+                        cat5_found = True
+                        reference = qa.adversarial_answer or qa.answer
+                        assert reference is not None, f"Category 5 QA has no reference answer in {dataset_path}"
+                        
+                        metrics = calculate_metrics("Not mentioned", reference)
+                        assert isinstance(metrics, dict)
+                        break
+                if cat5_found:
                     break
             if cat5_found:
                 break
         
-        assert cat5_found
+        assert cat5_found, f"No category 5 samples found in any dataset files: {dataset_paths}"

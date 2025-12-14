@@ -263,4 +263,8 @@ from config import MAX_CONCURRENT_GPU_OPERATIONS, DEFAULT_OVERLAP_RATIO
 
 ## 📝 License
 
-See LICENSE file for details.
+This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) file for details.
+
+### Code Attribution
+
+The evaluation code in `evaluation/hotpotqa/eval_hotpotqa.py` is adapted from the GAM (Generalized Augmented Memory) framework, which is licensed under the MIT License. See the [NOTICE](NOTICE) file for more information about the original source and license terms.

@@ -60,16 +60,17 @@ class AddHandler:
         logger.debug(f"Adding text to memory agent: {text[:50]}...")
         self.active_memory_agent.add([text])
         
-        # Add to overlap buffer
-        self.overlap_buffer.append(text)
-        
-        # Calculate overlap size based on block size
-        overlap_size = int(self.active_memory_agent.block_size * self.overlap_ratio)
-        
-        # Keep only recent memories for overlap (estimate ~100 tokens per memory)
-        max_buffer_items = max(5, overlap_size // 100)
-        if len(self.overlap_buffer) > max_buffer_items:
-            self.overlap_buffer = self.overlap_buffer[-max_buffer_items:]
+        # Add to overlap buffer only if overlap_ratio > 0
+        if self.overlap_ratio > 0:
+            self.overlap_buffer.append(text)
+            
+            # Calculate overlap size based on block size
+            overlap_size = int(self.active_memory_agent.block_size * self.overlap_ratio)
+            
+            # Keep only recent memories for overlap (estimate ~100 tokens per memory)
+            max_buffer_items = max(5, overlap_size // 100)
+            if len(self.overlap_buffer) > max_buffer_items:
+                self.overlap_buffer = self.overlap_buffer[-max_buffer_items:]
         
         is_active = self.active_memory_agent.is_active
         if not is_active:

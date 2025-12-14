@@ -35,13 +35,14 @@ class TextAddHandler:
             self.create_agent()
         
         self.active_memory_agent.add([text])
-        self.overlap_buffer.append(text)
         
-        block_size = self.active_memory_agent.block_size
-        overlap_size = int(block_size * self.overlap_ratio)
-        max_buffer_items = max(5, overlap_size // 100)
-        if len(self.overlap_buffer) > max_buffer_items:
-            self.overlap_buffer = self.overlap_buffer[-max_buffer_items:]
+        if self.overlap_ratio > 0:
+            self.overlap_buffer.append(text)
+            block_size = self.active_memory_agent.block_size
+            overlap_size = int(block_size * self.overlap_ratio)
+            max_buffer_items = max(5, overlap_size // 100)
+            if len(self.overlap_buffer) > max_buffer_items:
+                self.overlap_buffer = self.overlap_buffer[-max_buffer_items:]
         
         return self.active_memory_agent.is_active
 
@@ -95,6 +96,24 @@ class TextMemoryHandler:
         if self.add_handler.active_memory_agent is None:
             self.add_handler.create_agent()
             self._save_metadata()
+        
+        # Check if agent is already inactive before calling add_memory
+        if not self.add_handler.active_memory_agent.is_active:
+            logger.warning("Active agent is already inactive, triggering transition before add")
+            self.inactive_memory_agents.append(self.add_handler.active_memory_agent)
+            self.query_handler.router.add_blocks(self.add_handler.active_memory_agent)
+            
+            overlap_memories = self.add_handler.get_overlap_memories()
+            
+            self.add_handler.active_memory_agent = None
+            self.add_handler.create_agent()
+            
+            if overlap_memories:
+                for mem in overlap_memories:
+                    self.add_handler.active_memory_agent.add([mem])
+                logger.info(f"Added {len(overlap_memories)} overlap memories to new agent")
+            
+            self.add_handler.clear_overlap_buffer()
         
         is_active = self.add_handler.add_memory(text)
         if not is_active:
