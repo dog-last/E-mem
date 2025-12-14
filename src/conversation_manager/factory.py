@@ -14,6 +14,7 @@ def create_chat_manager(
     clean_cache_first: bool = True,
     model_context_window: int = 32768,
     router_system_prompt: str = None,
+    overlap_mode: str = "chunk",
     **kwargs
 ):
     """
@@ -56,6 +57,7 @@ def create_chat_manager(
             clean_cache_first=clean_cache_first,
             model_context_window=model_context_window,
             router_system_prompt=router_system_prompt,
+            overlap_mode=overlap_mode,
             **kwargs
         )
     elif storage_mode == "text":
@@ -67,7 +69,8 @@ def create_chat_manager(
             openai_config=openai_config,
             clean_cache_first=clean_cache_first,
             model_context_window=model_context_window,
-            router_system_prompt=router_system_prompt
+            router_system_prompt=router_system_prompt,
+            overlap_mode=overlap_mode
         )
     else:
         raise ValueError(f"Invalid storage_mode: {storage_mode}. Must be 'kv_cache' or 'text'")

@@ -219,7 +219,8 @@ def process_sample(
             attn_implementation=config['model'].get('attn_implementation', 'sdpa'),
             device_map=config['model'].get('device_map', 'auto'),
             router_system_prompt=config['memory'].get('router_system_prompt'),
-            quantization_config=config['model'].get('quantization_config')
+            quantization_config=config['model'].get('quantization_config'),
+            overlap_mode=config['memory'].get('overlap_mode', 'chunk')
         )
         logger.info("[OK] ChatManager created")
         

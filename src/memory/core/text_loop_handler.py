@@ -14,11 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 class TextAddHandler:
-    def __init__(self, model_id: str, openai_config: dict, model_context_window: int = 32768, overlap_ratio: float = 0.1):
+    def __init__(self, model_id: str, openai_config: dict, model_context_window: int = 32768, overlap_ratio: float = 0.1, overlap_mode: str = "chunk"):
         self.model_id = model_id
         self.openai_config = openai_config
         self.model_context_window = model_context_window
         self.overlap_ratio = overlap_ratio
+        self.overlap_mode = overlap_mode  # "chunk" or "token"
         self.active_memory_agent = None
         self.overlap_buffer = []
 
@@ -37,12 +38,52 @@ class TextAddHandler:
         self.active_memory_agent.add([text])
         
         if self.overlap_ratio > 0:
-            self.overlap_buffer.append(text)
+            import re
+
+            import tiktoken
+            
             block_size = self.active_memory_agent.block_size
-            overlap_size = int(block_size * self.overlap_ratio)
-            max_buffer_items = max(5, overlap_size // 100)
-            if len(self.overlap_buffer) > max_buffer_items:
-                self.overlap_buffer = self.overlap_buffer[-max_buffer_items:]
+            overlap_tokens = int(block_size * self.overlap_ratio)
+            
+            try:
+                tokenizer = tiktoken.encoding_for_model("gpt-4")
+            except KeyError:
+                tokenizer = tiktoken.get_encoding("cl100k_base")
+            
+            if self.overlap_mode == "token":
+                # Token mode: accumulate sentences up to token limit
+                sentences = re.split(r'(?<=[.!?])\s+', text)
+                self.overlap_buffer.extend(sentences)
+                
+                # Trim to token limit from the end
+                total_tokens = 0
+                keep_from_idx = len(self.overlap_buffer)
+                
+                for i in range(len(self.overlap_buffer) - 1, -1, -1):
+                    sent_tokens = len(tokenizer.encode(self.overlap_buffer[i]))
+                    if total_tokens + sent_tokens <= overlap_tokens:
+                        total_tokens += sent_tokens
+                        keep_from_idx = i
+                    else:
+                        break
+                
+                self.overlap_buffer = self.overlap_buffer[keep_from_idx:]
+            else:
+                # Chunk mode: keep whole chunks
+                self.overlap_buffer.append(text)
+                
+                total_tokens = 0
+                keep_from_idx = len(self.overlap_buffer)
+                
+                for i in range(len(self.overlap_buffer) - 1, -1, -1):
+                    chunk_tokens = len(tokenizer.encode(self.overlap_buffer[i]))
+                    if total_tokens + chunk_tokens <= overlap_tokens:
+                        total_tokens += chunk_tokens
+                        keep_from_idx = i
+                    else:
+                        break
+                
+                self.overlap_buffer = self.overlap_buffer[keep_from_idx:]
         
         return self.active_memory_agent.is_active
 
@@ -72,12 +113,12 @@ class TextQueryHandler:
 
 class TextMemoryHandler:
     def __init__(self, model_id: str, openai_config: dict, clean_cache_first: bool = True,
-                 model_context_window: int = 32768, router_system_prompt: str = None, overlap_ratio: float = 0.1):
+                 model_context_window: int = 32768, router_system_prompt: str = None, overlap_ratio: float = 0.1, overlap_mode: str = "chunk"):
         logger.info(f"Initializing TextMemoryHandler with model: {model_id}")
         self.model_id = model_id
         self.openai_config = openai_config
         self.model_context_window = model_context_window
-        self.add_handler = TextAddHandler(model_id, openai_config, model_context_window, overlap_ratio)
+        self.add_handler = TextAddHandler(model_id, openai_config, model_context_window, overlap_ratio, overlap_mode)
         self.inactive_memory_agents = []
         
         if router_system_prompt is None:

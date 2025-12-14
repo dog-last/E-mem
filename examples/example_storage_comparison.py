@@ -23,6 +23,7 @@ try:
     QUANTIZATION_CONFIG = config['model'].get('quantization_config')
     MAX_MEMORY = config.get('max_memory')
     ROUTER_SYSTEM_PROMPT = config['memory'].get('router_system_prompt')
+    OVERLAP_MODE = config['memory'].get('overlap_mode', 'chunk')
 except Exception as e:
     print(f"Error loading config: {e}")
     exit(1)
@@ -44,7 +45,8 @@ def demo_mode(storage_mode: str):
         router_system_prompt=ROUTER_SYSTEM_PROMPT,
         quantization_config=QUANTIZATION_CONFIG,
         max_memory=MAX_MEMORY,
-        clean_cache_first=True
+        clean_cache_first=True,
+        overlap_mode=OVERLAP_MODE
     )
     
     # Add memory

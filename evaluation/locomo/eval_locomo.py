@@ -127,7 +127,8 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
             attn_implementation=config['model']['attn_implementation'],
             device_map=config['model']['device_map'],
             router_system_prompt=config['memory']['router_system_prompt'],
-            quantization_config=config['model']['quantization_config']
+            quantization_config=config['model'].get('quantization_config'),
+            overlap_mode=config['memory'].get('overlap_mode', 'chunk')
         )
         
         # Store conversations

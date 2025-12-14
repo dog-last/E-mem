@@ -56,3 +56,34 @@ def test_cleanup():
     """Test cache cleanup."""
     clear_text_cache()
     # Should not raise any errors
+
+
+def test_text_handler_overlap_mode_chunk():
+    """Test TextMemoryHandler with chunk overlap mode."""
+    handler = TextMemoryHandler(
+        model_id="test-model",
+        openai_config={"api_key": "test"},
+        overlap_ratio=0.1,
+        overlap_mode="chunk"
+    )
+    assert handler.add_handler.overlap_mode == "chunk"
+
+
+def test_text_handler_overlap_mode_token():
+    """Test TextMemoryHandler with token overlap mode."""
+    handler = TextMemoryHandler(
+        model_id="test-model",
+        openai_config={"api_key": "test"},
+        overlap_ratio=0.1,
+        overlap_mode="token"
+    )
+    assert handler.add_handler.overlap_mode == "token"
+
+
+def test_text_handler_overlap_mode_default():
+    """Test TextMemoryHandler default overlap mode."""
+    handler = TextMemoryHandler(
+        model_id="test-model",
+        openai_config={"api_key": "test"}
+    )
+    assert handler.add_handler.overlap_mode == "chunk"  # Default should be chunk

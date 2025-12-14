@@ -62,6 +62,116 @@ class TestAddHandler:
         result = handler.query_new_agent("Test query")
         
         assert result == "No active memory."
+    
+    @patch("src.memory.core.loop_handler.MemoryAgent")
+    def test_overlap_mode_chunk(self, mock_agent_class):
+        """Test chunk mode overlap handling."""
+        mock_agent = Mock()
+        mock_agent.is_active = True
+        mock_agent.block_size = 1000
+        mock_agent_class.return_value = mock_agent
+        
+        handler = AddHandler(
+            model_id="test-model",
+            overlap_ratio=0.1,
+            overlap_mode="chunk"
+        )
+        
+        # Add multiple chunks
+        handler.add_memory("First chunk of text.")
+        handler.add_memory("Second chunk of text.")
+        handler.add_memory("Third chunk of text.")
+        
+        # In chunk mode, overlap_buffer should contain whole chunks
+        overlap_memories = handler.get_overlap_memories()
+        assert len(overlap_memories) > 0
+        # All items should be complete chunks
+        assert all(isinstance(mem, str) for mem in overlap_memories)
+    
+    @patch("src.memory.core.loop_handler.MemoryAgent")
+    def test_overlap_mode_token(self, mock_agent_class):
+        """Test token mode overlap handling."""
+        mock_agent = Mock()
+        mock_agent.is_active = True
+        mock_agent.block_size = 1000
+        mock_agent_class.return_value = mock_agent
+        
+        handler = AddHandler(
+            model_id="test-model",
+            overlap_ratio=0.1,
+            overlap_mode="token"
+        )
+        
+        # Add text with multiple sentences
+        text_with_sentences = "First sentence. Second sentence. Third sentence. Fourth sentence."
+        handler.add_memory(text_with_sentences)
+        
+        # In token mode, overlap_buffer should contain sentences
+        overlap_memories = handler.get_overlap_memories()
+        assert len(overlap_memories) > 0
+        # Items should be sentences (may be split)
+        assert all(isinstance(mem, str) for mem in overlap_memories)
+    
+    @patch("src.memory.core.loop_handler.MemoryAgent")
+    def test_overlap_mode_initialization(self, mock_agent_class):
+        """Test that overlap_mode is correctly initialized."""
+        handler_chunk = AddHandler(
+            model_id="test-model",
+            overlap_mode="chunk"
+        )
+        assert handler_chunk.overlap_mode == "chunk"
+        
+        handler_token = AddHandler(
+            model_id="test-model",
+            overlap_mode="token"
+        )
+        assert handler_token.overlap_mode == "token"
+        
+        handler_default = AddHandler(model_id="test-model")
+        assert handler_default.overlap_mode == "chunk"  # Default should be chunk
+    
+    @patch("src.memory.core.loop_handler.MemoryAgent")
+    def test_get_overlap_memories_returns_copy(self, mock_agent_class):
+        """Test that get_overlap_memories returns a copy, not a reference."""
+        mock_agent = Mock()
+        mock_agent.is_active = True
+        mock_agent.block_size = 1000
+        mock_agent_class.return_value = mock_agent
+        
+        handler = AddHandler(
+            model_id="test-model",
+            overlap_ratio=0.1,
+            overlap_mode="chunk"
+        )
+        
+        handler.add_memory("Test memory")
+        overlap1 = handler.get_overlap_memories()
+        overlap2 = handler.get_overlap_memories()
+        
+        # Should be different objects (copy)
+        assert overlap1 is not overlap2
+        # But should have same content
+        assert overlap1 == overlap2
+    
+    @patch("src.memory.core.loop_handler.MemoryAgent")
+    def test_clear_overlap_buffer(self, mock_agent_class):
+        """Test clearing overlap buffer."""
+        mock_agent = Mock()
+        mock_agent.is_active = True
+        mock_agent.block_size = 1000
+        mock_agent_class.return_value = mock_agent
+        
+        handler = AddHandler(
+            model_id="test-model",
+            overlap_ratio=0.1,
+            overlap_mode="chunk"
+        )
+        
+        handler.add_memory("Test memory")
+        assert len(handler.get_overlap_memories()) > 0
+        
+        handler.clear_overlap_buffer()
+        assert len(handler.get_overlap_memories()) == 0
 
 
 class TestQueryHandler:
@@ -296,3 +406,30 @@ class TestMemoryHandler:
         # Verify router was called with custom prompt
         call_args = mock_router_class.call_args
         assert call_args.kwargs["system_prompt"] == "Custom router prompt"
+    
+    @patch("src.memory.core.loop_handler.clear_metadata")
+    @patch("src.memory.core.loop_handler.clear_kv_cache")
+    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.AddHandler")
+    def test_init_with_overlap_mode(self, mock_add_handler_class, mock_router_class, mock_clear_kv, mock_clear_meta):
+        """Test initialization with overlap_mode parameter."""
+        mock_add_handler = Mock()
+        mock_add_handler_class.return_value = mock_add_handler
+        
+        # Create handler to trigger AddHandler initialization
+        _ = MemoryHandler(
+            model_id="test-model",
+            openai_config={"api_key": "test"},
+            overlap_mode="token"
+        )
+        
+        # Verify AddHandler was called with overlap_mode
+        # AddHandler is called with positional args: (model_id, model_context_window, attn_implementation, 
+        # device_map, quantization_config, max_memory, offload_folder, overlap_ratio, overlap_mode)
+        assert mock_add_handler_class.called, "AddHandler should have been called"
+        call_args = mock_add_handler_class.call_args
+        assert call_args is not None, "AddHandler should have been called with arguments"
+        # call_args is a tuple of (args, kwargs), so call_args[0] is the args tuple
+        args = call_args[0]
+        assert len(args) >= 9, f"AddHandler should be called with at least 9 positional arguments, got {len(args)}"
+        assert args[8] == "token", f"overlap_mode should be 'token', got {args[8]}"

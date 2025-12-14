@@ -18,7 +18,8 @@ class ChatManager(BaseAgent):
                    router_system_prompt: str = None,
                    quantization_config=None,
                    max_memory=None,
-                   offload_folder=None):
+                   offload_folder=None,
+                   overlap_mode: str = "chunk"):
         super().__init__(openai_config,system_prompt)
         self.name="chat_manager"
         self.last_queried_memory = None  # Store last query result
@@ -80,8 +81,9 @@ class ChatManager(BaseAgent):
         if offload_folder is not None:
             memory_kwargs["offload_folder"] = offload_folder
         
-        # Add overlap_ratio to memory_kwargs (default 10% overlap)
+        # Add overlap_ratio and overlap_mode to memory_kwargs
         memory_kwargs["overlap_ratio"] = 0.1
+        memory_kwargs["overlap_mode"] = overlap_mode
         self.memory_handler = MemoryHandler(**memory_kwargs)
         
     def chat(self,user_input:str,outer_tools=None,
@@ -219,7 +221,8 @@ class TextStorageChatManager(BaseAgent):
                  system_prompt:str=CHAT_SYS_PROMPT,
                  clean_cache_first:bool=True,
                  model_context_window: int =32768, 
-                   router_system_prompt: str = None):
+                   router_system_prompt: str = None,
+                   overlap_mode: str = "chunk"):
         super().__init__(openai_config,system_prompt)
         self.name="text_chat_manager"
         self.last_queried_memory = None
@@ -268,7 +271,8 @@ class TextStorageChatManager(BaseAgent):
             "openai_config": openai_config,
             "clean_cache_first": clean_cache_first,
             "model_context_window": model_context_window,
-            "overlap_ratio": 0.1
+            "overlap_ratio": 0.1,
+            "overlap_mode": overlap_mode
         }
         if router_system_prompt is not None:
             memory_kwargs["router_system_prompt"] = router_system_prompt

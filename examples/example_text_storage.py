@@ -30,13 +30,15 @@ def main():
     print("=" * 60)
     
     # Create text storage manager
+    OVERLAP_MODE = config['memory'].get('overlap_mode', 'chunk')
     manager = create_chat_manager(
         storage_mode="text",
         model_id=MODEL_ID,
         openai_config=OPENAI_CONFIG,
         model_context_window=MODEL_CONTEXT_WINDOW,
         router_system_prompt=ROUTER_SYSTEM_PROMPT,
-        clean_cache_first=True
+        clean_cache_first=True,
+        overlap_mode=OVERLAP_MODE
     )
     
     print("\n1. Adding memories...")
