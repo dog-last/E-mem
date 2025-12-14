@@ -1,5 +1,6 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from typing import List
 
 from src.memory.kv_block_manager.text_block import (
     clear_text_cache,
@@ -87,8 +88,23 @@ class TextAddHandler:
         
         return self.active_memory_agent.is_active
 
-    def get_overlap_memories(self) -> list:
-        return self.overlap_buffer.copy()
+    def get_overlap_memories(self) -> List[str]:
+        """
+        Get the overlap memories.
+        
+        Returns:
+            List[str]: The overlap memories.
+        """
+        if self.overlap_mode == "token":
+            # For token mode, combine all overlap sentences into a single chunk with <overlap_replay> tag
+            if not self.overlap_buffer:
+                return []
+            
+            overlap_content = "".join(self.overlap_buffer)
+            return [f"<overlap_replay>\n{overlap_content}\n</overlap_replay>"]
+        else:
+            # For chunk mode, return chunks as they are (each chunk gets its own tag)
+            return self.overlap_buffer.copy()
 
     def clear_overlap_buffer(self):
         self.overlap_buffer = []
@@ -149,10 +165,17 @@ class TextMemoryHandler:
             self.add_handler.active_memory_agent = None
             self.add_handler.create_agent()
             
+            # Add overlap memories
             if overlap_memories:
-                for mem in overlap_memories:
-                    self.add_handler.active_memory_agent.add([mem])
-                logger.info(f"Added {len(overlap_memories)} overlap memories to new agent")
+                if self.add_handler.overlap_mode == "token":
+                    # For token mode, add all overlap memories as a single chunk
+                    self.add_handler.active_memory_agent.add(overlap_memories)
+                    logger.info(f"Added {len(overlap_memories)} overlap memory chunks to new agent")
+                else:
+                    # For chunk mode, add each chunk individually to preserve chunk boundaries
+                    for mem in overlap_memories:
+                        self.add_handler.active_memory_agent.add([mem])
+                    logger.info(f"Added {len(overlap_memories)} overlap chunks to new agent")
             
             self.add_handler.clear_overlap_buffer()
         
@@ -163,14 +186,14 @@ class TextMemoryHandler:
             self.query_handler.router.add_blocks(self.add_handler.active_memory_agent)
             
             overlap_memories = self.add_handler.get_overlap_memories()
-            logger.info(f"Creating new agent with {len(overlap_memories)} overlap memories")
+            logger.info(f"Creating new agent with {len(overlap_memories)} overlap memory chunks")
             
             self.add_handler.active_memory_agent = None
             self.add_handler.create_agent()
             
             if overlap_memories:
-                for mem in overlap_memories:
-                    self.add_handler.active_memory_agent.add([mem])
+                # Add all overlap memories as a single chunk
+                self.add_handler.active_memory_agent.add(overlap_memories)
             
             self.add_handler.clear_overlap_buffer()
             self._save_metadata()

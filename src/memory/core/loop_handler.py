@@ -2,6 +2,7 @@ import atexit
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
+from typing import List
 
 from src.memory.kv_block_manager.block import clear_cache as clear_kv_cache
 from src.memory.kv_block_manager.metadata import (
@@ -116,9 +117,23 @@ class AddHandler:
             logger.info(f"Memory agent became full, overlap buffer size: {len(self.overlap_buffer)}")
         return is_active
     
-    def get_overlap_memories(self) -> list:
-        """Get memories for overlap with next block."""
-        return self.overlap_buffer.copy()
+    def get_overlap_memories(self) -> List[str]:
+        """
+        Get the overlap memories.
+        
+        Returns:
+            List[str]: The overlap memories.
+        """
+        if self.overlap_mode == "token":
+            # For token mode, combine all overlap sentences into a single chunk with <overlap_replay> tag
+            if not self.overlap_buffer:
+                return []
+            
+            overlap_content = "".join(self.overlap_buffer)
+            return [f"<overlap_replay>\n{overlap_content}\n</overlap_replay>"]
+        else:
+            # For chunk mode, return chunks as they are (each chunk gets its own tag)
+            return self.overlap_buffer.copy()
     
     def clear_overlap_buffer(self):
         """Clear overlap buffer after creating new agent."""
@@ -218,9 +233,15 @@ class MemoryHandler:
             
             # Add overlap memories
             if overlap_memories:
-                for mem in overlap_memories:
-                    self.add_handler.active_memory_agent.add([mem])
-                logger.info(f"Added {len(overlap_memories)} overlap memories to new agent")
+                if self.add_handler.overlap_mode == "token":
+                    # For token mode, add all overlap memories as a single chunk
+                    self.add_handler.active_memory_agent.add(overlap_memories)
+                    logger.info(f"Added {len(overlap_memories)} overlap memory chunks to new agent")
+                else:
+                    # For chunk mode, add each chunk individually to preserve chunk boundaries
+                    for mem in overlap_memories:
+                        self.add_handler.active_memory_agent.add([mem])
+                    logger.info(f"Added {len(overlap_memories)} overlap chunks to new agent")
             
             # Clear overlap buffer
             self.add_handler.clear_overlap_buffer()
@@ -244,9 +265,15 @@ class MemoryHandler:
             
             # Add overlap memories to new agent
             if overlap_memories:
-                for mem in overlap_memories:
-                    self.add_handler.active_memory_agent.add([mem])
-                logger.info(f"Added {len(overlap_memories)} overlap memories to new agent")
+                if self.add_handler.overlap_mode == "token":
+                    # For token mode, add all overlap memories as a single chunk
+                    self.add_handler.active_memory_agent.add(overlap_memories)
+                    logger.info(f"Added {len(overlap_memories)} overlap memory chunks to new agent")
+                else:
+                    # For chunk mode, add each chunk individually to preserve chunk boundaries
+                    for mem in overlap_memories:
+                        self.add_handler.active_memory_agent.add([mem])
+                    logger.info(f"Added {len(overlap_memories)} overlap chunks to new agent")
             
             # Clear overlap buffer
             self.add_handler.clear_overlap_buffer()

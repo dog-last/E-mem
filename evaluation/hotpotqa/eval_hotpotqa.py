@@ -116,17 +116,44 @@ def build_context_chunks_for_sample(
 
 def make_prompt(context: str, question: str) -> str:
     """Create unified prompt (open QA format)"""
-    prompt = f"""You are a careful multi-hop reading assistant. 
-Use the given Context. 
-Answer with ONLY the final answer string; no extra words.
+    prompt = f"""You are an expert at answering questions concisely based on the provided context.
 
-Question:
-{question}
+Instructions:
+1.  **Analyze the Request**: Identify the specific entity, date, number, or name requested.
+2.  **Reasoning**: Think step-by-step to locate the answer in the context. If the question asks for a former name, time-specific detail, or multiple entities, ensure you select the exact one matching the criteria.
+3.  **Extraction**: Extract ONLY the specific answer string. Remove all articles (a, an, the), punctuation, and sentence structures.
+4.  **Format**:
+    * If the answer is a person, output only the name.
+    * If the answer is a date/year, output only the value.
+    * If the answer is a place, output only the location name.
+    * If the answer is a list, separate items with commas.
+    * If the question asks "yes or no", output "yes" or "no".
 
-Context:
-{context}
+Output Format:
+Reasoning: [Brief step-by-step deduction]
+Final Answer: [The concise answer string]
 
-Answer:
+Example 1:
+Context: The 2008 film "Iron Man" stars Robert Downey Jr. as Tony Stark.
+Question: Who played Tony Stark in Iron Man?
+Reasoning: The context states Robert Downey Jr. played Tony Stark.
+Final Answer: Robert Downey Jr.
+
+Example 2:
+Context: The Beatles were formed in Liverpool in 1960.
+Question: In which city were The Beatles formed?
+Reasoning: The context explicitly mentions Liverpool.
+Final Answer: Liverpool
+
+Example 3:
+Context: John is taller than Bill. Bill is taller than Dave.
+Question: Is John taller than Dave?
+Reasoning: Transitive property: John > Bill > Dave.
+Final Answer: yes
+
+Question: {question}
+
+Context: {context}
 """
     return prompt
 
