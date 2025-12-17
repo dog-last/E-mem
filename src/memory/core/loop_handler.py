@@ -25,12 +25,14 @@ class AddHandler:
                    max_memory=None,
                    offload_folder=None,
                    overlap_ratio: float = 0.1,
-                   overlap_mode: str = "chunk"):
+                   overlap_mode: str = "chunk",
+                   block_size_ratio: float=0.125):
         self.model_id=model_id
         self.model_context_window=model_context_window
         self.attn_implementation=attn_implementation
         self.device_map=device_map
         self.quantization_config=quantization_config
+        self.block_size_ratio=block_size_ratio
         self.max_memory=max_memory
         self.offload_folder=offload_folder
         self.overlap_ratio=overlap_ratio
@@ -46,7 +48,8 @@ class AddHandler:
                                              device_map=self.device_map,
                                              quantization_config=self.quantization_config,
                                              max_memory=self.max_memory,
-                                             offload_folder=self.offload_folder)
+                                             offload_folder=self.offload_folder,
+                                             block_size_ratio=self.block_size_ratio)
         logger.debug(f"Memory agent created with model: {self.model_id}")
 
     def add_memory(self, text: str) -> bool:
@@ -178,17 +181,19 @@ class MemoryHandler:
                    max_memory=None,
                    offload_folder=None,
                    overlap_ratio: float = 0.1,
-                   overlap_mode: str = "chunk"):
+                   overlap_mode: str = "chunk",
+                   block_size_ratio: float= 0.125):
         logger.info(f"Initializing MemoryHandler with model: {model_id}, overlap_ratio: {overlap_ratio}")
         self.model_id = model_id
         self.model_context_window = model_context_window
         self.attn_implementation = attn_implementation
+        self.block_size_ratio=block_size_ratio
         self.device_map = device_map
         self.quantization_config = quantization_config
         self.max_memory = max_memory
         self.offload_folder = offload_folder
         
-        self.add_handler=AddHandler(model_id,model_context_window,attn_implementation,device_map,quantization_config,max_memory,offload_folder,overlap_ratio,overlap_mode)
+        self.add_handler=AddHandler(model_id,model_context_window,attn_implementation,device_map,quantization_config,max_memory,offload_folder,overlap_ratio,overlap_mode,block_size_ratio)
         self.inactive_memory_agents = []
         if router_system_prompt is None:
             self.query_handler=QueryHandler(Router(openai_config=openai_config))
@@ -341,7 +346,8 @@ class MemoryHandler:
                 "summary": agent.summary,
                 "is_active": False,
                 "block_used": agent.current_block.block_used,
-                "chunk_number": agent.chunk_number
+                "chunk_number": agent.chunk_number,
+                "block_size_ratio": agent.block_size_ratio
             })
         
         # Save active agent if exists AND has data (without summary)
@@ -357,7 +363,8 @@ class MemoryHandler:
                     "summary": agent.summary,  # Use actual summary (None for active, set for inactive)
                     "is_active": agent.is_active,  # Use actual is_active status
                     "block_used": agent.current_block.block_used,
-                    "chunk_number": agent.chunk_number
+                    "chunk_number": agent.chunk_number,
+                    "block_size_ratio": agent.block_size_ratio
                 })
         
         # Merge: other sessions + current session
@@ -397,7 +404,8 @@ class MemoryHandler:
                 max_memory=self.max_memory,
                 offload_folder=self.offload_folder,
                 load_from_block_id=agent_data["block_id"],
-                load_timestamp=agent_data["timestamp"]
+                load_timestamp=agent_data["timestamp"],
+                block_size_ratio=agent_data["block_size_ratio"]
             )
             
             # Restore summary and block_used

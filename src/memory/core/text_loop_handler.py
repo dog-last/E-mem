@@ -15,12 +15,15 @@ logger = logging.getLogger(__name__)
 
 
 class TextAddHandler:
-    def __init__(self, model_id: str, openai_config: dict, model_context_window: int = 32768, overlap_ratio: float = 0.1, overlap_mode: str = "chunk"):
+    def __init__(self, model_id: str, openai_config: dict,
+     model_context_window: int = 32768, overlap_ratio: float = 0.1, 
+     overlap_mode: str = "chunk",block_size_ratio: float=0.125):
         self.model_id = model_id
         self.openai_config = openai_config
         self.model_context_window = model_context_window
         self.overlap_ratio = overlap_ratio
         self.overlap_mode = overlap_mode  # "chunk" or "token"
+        self.block_size_ratio=block_size_ratio
         self.active_memory_agent = None
         self.overlap_buffer = []
 
@@ -29,7 +32,8 @@ class TextAddHandler:
         self.active_memory_agent = TextMemoryAgent(
             model_id=self.model_id,
             openai_config=self.openai_config,
-            model_context_window=self.model_context_window
+            model_context_window=self.model_context_window,
+            block_size_ratio=self.block_size_ratio
         )
 
     def add_memory(self, text: str) -> bool:
@@ -129,12 +133,14 @@ class TextQueryHandler:
 
 class TextMemoryHandler:
     def __init__(self, model_id: str, openai_config: dict, clean_cache_first: bool = True,
-                 model_context_window: int = 32768, router_system_prompt: str = None, overlap_ratio: float = 0.1, overlap_mode: str = "chunk"):
+                 model_context_window: int = 32768, router_system_prompt: str = None,
+                  overlap_ratio: float = 0.1, overlap_mode: str = "chunk", block_size_ratio: float=0.125):
         logger.info(f"Initializing TextMemoryHandler with model: {model_id}")
         self.model_id = model_id
         self.openai_config = openai_config
         self.model_context_window = model_context_window
-        self.add_handler = TextAddHandler(model_id, openai_config, model_context_window, overlap_ratio, overlap_mode)
+        self.block_size_ratio=block_size_ratio
+        self.add_handler = TextAddHandler(model_id, openai_config, model_context_window, overlap_ratio, overlap_mode,block_size_ratio)
         self.inactive_memory_agents = []
         
         if router_system_prompt is None:
@@ -228,7 +234,8 @@ class TextMemoryHandler:
                 "summary": agent.summary,
                 "is_active": False,
                 "block_used": agent.current_block.block_used,
-                "chunk_number": agent.current_block.chunk_num
+                "chunk_number": agent.current_block.chunk_num,
+                "block_size_ratio": agent.block_size_ratio
             })
         if self.add_handler.active_memory_agent:
             agent = self.add_handler.active_memory_agent
@@ -238,7 +245,8 @@ class TextMemoryHandler:
                 "summary": None,
                 "is_active": True,
                 "block_used": agent.current_block.block_used,
-                "chunk_number": agent.current_block.chunk_num
+                "chunk_number": agent.current_block.chunk_num,
+                "block_size_ratio": agent.block_size_ratio
             })
         save_text_agents_metadata(agents_data)
         logger.info(f"Saved metadata for {len(agents_data)} text agents")
@@ -255,7 +263,8 @@ class TextMemoryHandler:
                 openai_config=self.openai_config,
                 model_context_window=self.model_context_window,
                 load_from_block_id=agent_data["block_id"],
-                load_timestamp=agent_data["timestamp"]
+                load_timestamp=agent_data["timestamp"],
+                block_size_ratio=agent_data["block_size_ratio"]
             )
             agent.summary = agent_data.get("summary")
             agent.current_block.block_used = agent_data.get("block_used", 0)

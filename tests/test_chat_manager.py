@@ -17,8 +17,8 @@ class TestChatManager:
         )
         
         assert chat.name == "chat_manager"
-        assert chat.add_mem_tool["type"] == "function"
-        assert chat.search_mem_tool["type"] == "function"
+        assert chat.ADD_MEMORY_TOOL["type"] == "function"
+        assert chat.SEARCH_MEMORY_TOOL["type"] == "function"
         mock_memory_handler.assert_called_once()
     
     @patch("src.conversation_manager.chat_handler.MemoryHandler")

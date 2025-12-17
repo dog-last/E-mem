@@ -20,6 +20,7 @@ memory:
   clean_cache_first: true  # Set to true to avoid loading corrupted cache
   router_system_prompt: null
   overlap_ratio: 0.1  # Overlap ratio between KV blocks (0.0-1.0)
+  block_size_ratio: 0.125
   overlap_mode: "chunk"  # "chunk" or "token" - overlap handling strategy
   max_concurrent_gpu_operations: 2  # Number of concurrent GPU operations for parallel queries
 

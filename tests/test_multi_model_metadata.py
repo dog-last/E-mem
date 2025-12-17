@@ -31,7 +31,8 @@ class TestMultiModelMetadata:
                         "summary": "Summary A",
                         "is_active": False,
                         "block_used": 1000,
-                        "chunk_number": 10
+                        "chunk_number": 10,
+                        "block_size_ratio": 0.125
                     }
                 ]
                 save_agents_metadata(initial_metadata)
@@ -55,6 +56,7 @@ class TestMultiModelMetadata:
                     mock_agent_b.summary = "Summary B"
                     mock_agent_b.saved_chunks = [{"start": 0, "length": 100}]
                     mock_agent_b.is_active = False
+                    mock_agent_b.block_size_ratio = 0.125
                     
                     handler_b.inactive_memory_agents = [mock_agent_b]
                     handler_b._save_metadata()
@@ -95,7 +97,8 @@ class TestMultiModelMetadata:
                         "summary": "Summary A1",
                         "is_active": False,
                         "block_used": 1000,
-                        "chunk_number": 10
+                        "chunk_number": 10,
+                        "block_size_ratio": 0.125
                     },
                     {
                         "block_id": "block-b-1",
@@ -105,7 +108,8 @@ class TestMultiModelMetadata:
                         "summary": "Summary B1",
                         "is_active": False,
                         "block_used": 2000,
-                        "chunk_number": 20
+                        "chunk_number": 20,
+                        "block_size_ratio": 0.125
                     }
                 ]
                 save_agents_metadata(initial_metadata)
@@ -129,6 +133,7 @@ class TestMultiModelMetadata:
                     mock_agent_a2.summary = "Summary A2"
                     mock_agent_a2.saved_chunks = [{"start": 0, "length": 100}]
                     mock_agent_a2.is_active = False
+                    mock_agent_a2.block_size_ratio = 0.125
                     
                     handler.inactive_memory_agents = [mock_agent_a2]
                     handler._save_metadata()
@@ -168,7 +173,8 @@ class TestMultiModelMetadata:
                         "summary": "Summary A",
                         "is_active": False,
                         "block_used": 1000,
-                        "chunk_number": 10
+                        "chunk_number": 10,
+                        "block_size_ratio": 0.125
                     },
                     {
                         "block_id": "block-b-1",
@@ -178,7 +184,8 @@ class TestMultiModelMetadata:
                         "summary": "Summary B",
                         "is_active": False,
                         "block_used": 2000,
-                        "chunk_number": 20
+                        "chunk_number": 20,
+                        "block_size_ratio": 0.125
                     }
                 ]
                 save_agents_metadata(metadata)

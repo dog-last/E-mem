@@ -33,10 +33,12 @@ class MemoryAgent:
                    max_memory=None,
                    offload_folder=None,
                    load_from_block_id: str = None,
-                   load_timestamp: str = None):
+                   load_timestamp: str = None,
+                   block_size_ratio: float=0.125):
         self.model_id = model_id
         self.model_context_window = model_context_window
-        self.block_size = int(model_context_window * 0.37)
+        self.block_size_ratio=block_size_ratio
+        self.block_size = int(model_context_window * block_size_ratio)
 
         self.summary=None
         

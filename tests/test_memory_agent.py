@@ -34,10 +34,12 @@ class TestMemoryAgent:
         mock_model = create_mock_model()
         mock_model_class.from_pretrained.return_value = mock_model
         
+        # Test with default block_size_ratio (0.125)
         agent = MemoryAgent(model_id="test-model", model_context_window=1000)
         
         assert agent.model_id == "test-model"
-        assert agent.block_size == 370
+        assert agent.block_size == 125  # 1000 * 0.125 = 125
+        assert agent.block_size_ratio == 0.125
         assert agent.is_active
         assert agent.global_offset == 0
         assert agent.chunk_number == 0

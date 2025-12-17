@@ -247,7 +247,10 @@ def process_sample(
             device_map=config['model'].get('device_map', 'auto'),
             router_system_prompt=config['memory'].get('router_system_prompt'),
             quantization_config=config['model'].get('quantization_config'),
-            overlap_mode=config['memory'].get('overlap_mode', 'chunk')
+            overlap_mode=config['memory'].get('overlap_mode', 'chunk'),
+            overlap_ratio=config['memory'].get('overlap_ratio', 0.1),
+            block_size_ratio=config['memory'].get('block_size_ratio', 0.125),
+            max_memory=config.get('max_memory')
         )
         logger.info("[OK] ChatManager created")
         

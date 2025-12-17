@@ -21,10 +21,12 @@ class _TextMemoryLLM(BaseAgent):
 
 class TextMemoryAgent:
     def __init__(self, model_id: str, openai_config: dict, model_context_window: int = 32768,
-                 load_from_block_id: str = None, load_timestamp: str = None):
+                 load_from_block_id: str = None, load_timestamp: str = None,
+                 block_size_ratio:float=0.125):
         self.model_id = model_id
         self.model_context_window = model_context_window
-        self.block_size = int(model_context_window * 0.37)
+        self.block_size_ratio=block_size_ratio
+        self.block_size = int(model_context_window * block_size_ratio)
         self.tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
         self.llm = _TextMemoryLLM(openai_config, MEMORY_AGENT_SYS_PROMPT)
         self.is_active = True

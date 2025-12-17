@@ -1,77 +1,37 @@
 # KV-Cached Memory Agent System
 
-A novel approach to LLM memory management using KV cache for efficient context handling in conversational AI.
+<p align="center">
+  <strong>A novel approach to LLM memory management using KV cache for efficient context handling</strong>
+</p>
 
-## 🆕 NEW: Text Storage Mode
+<p align="center">
+  <a href="#-features">Features</a> •
+  <a href="#-quick-start">Quick Start</a> •
+  <a href="#-architecture">Architecture</a> •
+  <a href="#-configuration">Configuration</a> •
+  <a href="#-documentation">Documentation</a>
+</p>
 
-Now supports **two storage backends**:
-- **KV Cache Mode** (default) - GPU-based
-- **Text Storage Mode** (new) - API-based, no GPU required
+---
 
-👉 See [docs/QUICKSTART_TEXT_STORAGE.md](docs/QUICKSTART_TEXT_STORAGE.md) for quick start guide
+## 🌟 Features
 
-## 🎯 Core Concept
+- **Dual Storage Modes**: KV Cache (GPU) and Text Storage (API-based)
+- **No Traditional RAG**: Avoids embedding-based search inaccuracies
+- **Full Context Understanding**: LLM sees complete memory, not fragments
+- **KV Cache Reuse**: Cached context for efficient memory access
+- **Scalable Architecture**: Parallel agents handle growing memory
+- **Pydantic Validation**: Type-safe configuration with schema validation
+- **145 Unit Tests**: Comprehensive test coverage
 
-Instead of traditional RAG-based memory retrieval, this system:
-- **Stores memories as KV cache** - Reuses cached context
-- **Parallel memory agents** - Multiple agents handle different memory blocks
-- **Router-based selection** - Smart routing to relevant memory blocks using summaries
-- **Long/short-term memory** - Active agent for recent memories, inactive agents for historical data
-
-## 🏗️ Architecture
-
-```
-ChatManager (User Interface)
-    |
-    v
-MemoryHandler (Orchestrator)
-    |
-    +-- AddHandler (Manages active memory agent)
-    |       |
-    |       v
-    |   MemoryAgent (Active) --> KVBlock (KV Cache Storage)
-    |
-    +-- QueryHandler (Manages inactive agents)
-            |
-            v
-        Router (LLM-based selector)
-            |
-            v
-        [MemoryAgent (Inactive), MemoryAgent (Inactive), ...]
-```
-
-### Components
-
-1. **KVBlock** (`src/memory/kv_block_manager/block.py`)
-   - Stores KV cache to disk in `kv_data/` directory
-   - Tracks token usage and block capacity
-   - Automatically created in current working directory
-
-2. **MemoryAgent** (`src/memory/memory_agent/agent.py`)
-   - Incrementally builds KV cache from text chunks
-   - Generates responses using cached context
-   - Creates summaries when block becomes full
-   - Active: accepts new memories | Inactive: query-only
-
-3. **Router** (`src/memory/router/router.py`)
-   - LLM-based routing using memory summaries
-   - Parallel query execution with ThreadPoolExecutor
-   - Returns top-k relevant memory blocks
-
-4. **MemoryHandler** (`src/memory/core/loop_handler.py`)
-   - Coordinates memory addition and retrieval
-   - Manages agent lifecycle (active → inactive)
-   - Parallel queries to active + inactive agents
-
-5. **ChatManager** (`src/conversation_manager/chat_handler.py`)
-   - User-facing interface with tool calling
-   - Tools: `add_memory`, `query_memory`
-   - Automatic memory management
-
-## 🚀 Installation
+## 📦 Installation
 
 ```bash
-# Install dependencies with uv
+# Clone the repository
+git clone https://github.com/your-username/mem-with-kv-cache.git
+cd mem-with-kv-cache
+
+# Install with uv (recommended)
 uv sync
 
 # Or with pip
@@ -82,189 +42,240 @@ cp config.example.yaml config.yaml
 # Edit config.yaml with your settings
 ```
 
-## 📖 Usage
+## 🚀 Quick Start
 
-### Basic Example (KV Cache Mode)
-
-```python
-from src.conversation_manager.chat_handler import ChatManager
-
-# Initialize
-chat_manager = ChatManager(
-    model_id="Qwen/Qwen3-4B",
-    openai_config={"api_key": "your-key"},
-    clean_cache_first=True
-)
-
-# Chat with memory
-response = chat_manager.chat(
-    user_input="My favorite color is blue.",
-    auto_save=False  # Agent decides when to save
-)
-```
-
-### Using Factory (Recommended)
+### Using the Factory (Recommended)
 
 ```python
-from src.conversation_manager.factory import create_chat_manager
+from src.conversation_manager import create_chat_manager
 
 # KV Cache mode (GPU required)
-kv_manager = create_chat_manager(
+manager = create_chat_manager(
     storage_mode="kv_cache",
     model_id="Qwen/Qwen3-4B",
-    openai_config={"api_key": "your-key"}
+    openai_config={
+        "api_key": "your-key",
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4o-mini"
+    }
 )
 
-# Text Storage mode (No GPU required)
-text_manager = create_chat_manager(
+# Store memory
+manager.chat("My name is Alice and I love hiking.", auto_save=True)
+
+# Query memory
+response = manager.chat("What is my name and hobby?")
+print(response)
+```
+
+### Text Storage Mode (No GPU Required)
+
+```python
+manager = create_chat_manager(
     storage_mode="text",
     model_id="Qwen/Qwen3-4B",
-    openai_config={"api_key": "your-key"}
+    openai_config={"api_key": "your-key", "model": "gpt-4o-mini"}
 )
 ```
 
-### Run Examples
+See [docs/QUICKSTART_TEXT_STORAGE.md](docs/QUICKSTART_TEXT_STORAGE.md) for detailed guide.
 
-```bash
-python examples/quickstart.py              # Quick start
-python examples/example_text_storage.py    # Text storage mode
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    ChatManager (Interface)                   │
+│                 ┌──────────────────────────┐                │
+│                 │    BaseChatManager       │                │
+│                 │  - Tool definitions      │                │
+│                 │  - Memory aggregation    │                │
+│                 └──────────────────────────┘                │
+│                            │                                 │
+│              ┌─────────────┴─────────────┐                  │
+│              ▼                           ▼                  │
+│    ┌─────────────────┐         ┌─────────────────┐         │
+│    │   ChatManager   │         │ TextStorage     │         │
+│    │   (KV Cache)    │         │ ChatManager     │         │
+│    └────────┬────────┘         └────────┬────────┘         │
+└─────────────┼───────────────────────────┼───────────────────┘
+              │                           │
+              ▼                           ▼
+┌─────────────────────────┐    ┌─────────────────────────┐
+│    MemoryHandler        │    │   TextMemoryHandler     │
+│  ┌───────────────────┐  │    │  ┌───────────────────┐  │
+│  │   AddHandler      │  │    │  │  TextAddHandler   │  │
+│  │   (Active Agent)  │  │    │  │  (Text Storage)   │  │
+│  └───────────────────┘  │    │  └───────────────────┘  │
+│  ┌───────────────────┐  │    │  ┌───────────────────┐  │
+│  │   QueryHandler    │  │    │  │ TextQueryHandler  │  │
+│  │   (Router)        │  │    │  │   (Router)        │  │
+│  └───────────────────┘  │    │  └───────────────────┘  │
+└─────────────────────────┘    └─────────────────────────┘
+              │                           │
+              ▼                           ▼
+       ┌──────────┐                ┌──────────┐
+       │ KVBlock  │                │TextBlock │
+       │ (.pt)    │                │ (.json)  │
+       └──────────┘                └──────────┘
 ```
 
-## 🔧 Configuration
+### Core Components
 
-### Model Quantization
+| Component | Description |
+|-----------|-------------|
+| **BaseChatManager** | Abstract base with shared tool definitions and memory aggregation |
+| **ChatManager** | KV cache implementation for GPU-based storage |
+| **TextStorageChatManager** | Text-based implementation for API-only deployment |
+| **MemoryHandler** | Orchestrates memory addition and retrieval |
+| **Router** | LLM-based intelligent routing using summaries |
+| **KVBlock/TextBlock** | Storage backends for memory persistence |
+
+## ⚙️ Configuration
+
+### Configuration Schema (Pydantic Validated)
+
+```yaml
+# config.yaml
+model:
+  model_id: "Qwen/Qwen3-4B"
+  openai_config:
+    api_key: "your-api-key"
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4o-mini"
+  model_context_window: 32768
+  attn_implementation: "sdpa"  # sdpa, flash_attention_2, eager
+  device_map: "auto"
+
+memory:
+  storage_mode: "kv_cache"      # kv_cache or text
+  clean_cache_first: true
+  overlap_ratio: 0.1            # 0.0-0.5
+  overlap_mode: "chunk"         # chunk or token
+  block_size_ratio: 0.125       # 0.0-1.0
+  max_concurrent_gpu_operations: 2
+
+max_memory:
+  0: "20GB"
+  1: "20GB"
+```
+
+### Programmatic Configuration with Validation
 
 ```python
-from transformers import BitsAndBytesConfig
-import torch
+from src.config import load_and_validate_config, MemoryConfig
 
-quant_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_compute_dtype=torch.bfloat16
+# Validate memory config
+memory_config = MemoryConfig(
+    storage_mode="kv_cache",
+    overlap_ratio=0.1,
+    block_size_ratio=0.125
 )
 
-chat_manager = ChatManager(
-    model_id="your-model",
-    quantization_config=quant_config
-)
+# Load and validate full config
+from config import load_validated_config
+app_config = load_validated_config("config.yaml")
 ```
-
-### Memory Block Size
-
-```python
-chat_manager = ChatManager(
-    model_id="your-model",
-    model_context_window=32768,  # Block size = 90% of this
-)
-```
-
-## 💡 Key Advantages
-
-1. **No Traditional Retrieval** - Avoids embedding-based search inaccuracies
-2. **Full Context Understanding** - LLM sees complete memory, not fragments
-3. **KV Cache Reuse** - Cached context for efficient memory access (KV Cache mode)
-4. **Scalable** - Parallel agents handle growing memory
-5. **Minimal Components** - Pure LLM-based, no external vector DBs
-6. **Flexible Deployment** - Choose between GPU (KV Cache) or API (Text Storage)
-
-## 🎓 Use Cases
-
-### ✅ Suitable For:
-- **Conversational AI** - Personal assistants, chatbots
-- **Limited Memory Scope** - User-specific data (not enterprise-scale RAG)
-- **High Accuracy Needs** - Full context understanding required
-
-### ❌ Not Suitable For:
-- **Task Completion Agents** - Better with traditional RAG for tool-heavy workflows
-- **Massive Knowledge Bases** - Vector DBs more efficient at scale
-- **Real-time Updates** - KV cache rebuild has overhead
 
 ## 📁 Project Structure
 
 ```
 mem-with-kv-cache/
-├── src/                         # Core source code
-│   ├── agent/                   # Base agent with tool calling
-│   ├── conversation_manager/    # Chat interface & factory
-│   ├── memory/                  # Memory management (KV cache & text storage)
-│   └── utils/                   # Utilities & prompts
-├── examples/                    # Example scripts
-│   ├── quickstart.py            # Quick start example
-│   ├── example_text_storage.py  # Text storage example
-│   └── example_simple.py        # Simple example
-├── evaluation/locomo/           # LoComo dataset evaluation
-│   ├── eval_locomo.py           # Main evaluation script
-│   ├── load_dataset.py          # Dataset loader
-│   ├── utils.py                 # Evaluation metrics
-│   └── eval_data/               # Dataset files
-├── scripts/                     # Utility scripts
-│   └── run_eval.sh              # Evaluation runner
-├── tests/                       # Unit tests
-├── docs/                        # Documentation
-├── config.yaml                  # Main config (gitignored)
-├── config.example.yaml          # Config template
-└── config.py                    # Config loader
+├── src/
+│   ├── agent/                    # Base agent with tool calling
+│   ├── config/                   # Pydantic configuration schemas
+│   ├── conversation_manager/     # Chat interface & factory
+│   │   ├── base_chat_manager.py  # Shared base class
+│   │   ├── chat_handler.py       # KV cache & text implementations
+│   │   └── factory.py            # Factory function
+│   ├── memory/
+│   │   ├── core/                 # Memory handlers
+│   │   ├── kv_block_manager/     # KV cache storage
+│   │   ├── memory_agent/         # Memory agents
+│   │   └── router/               # LLM-based routing
+│   └── utils/                    # Utilities & prompts
+├── evaluation/
+│   ├── locomo/                   # LoComo benchmark
+│   └── hotpotqa/                 # HotpotQA benchmark
+├── tests/                        # 145 unit tests
+├── docs/                         # Documentation
+├── config.example.yaml           # Configuration template
+└── config.py                     # Configuration loader
 ```
-
-## 🔬 Technical Details
-
-### KV Cache Mechanism
-- Each memory chunk is processed through the model once
-- Only NEW cache is stored per chunk (not merged cache)
-- During query, all chunks are merged and reused
-- Position IDs ensure correct RoPE embeddings
-
-### Persistence (KV Cache Mode)
-- Agent metadata saved to `kv_data/agents_metadata.json`
-- Includes: block UUID, timestamp, summary, active status
-- Auto-saves when agent becomes inactive
-- Auto-loads on startup (if `clean_cache_first=False`)
-- See [docs/PERSISTENCE.md](docs/PERSISTENCE.md) for details
-
-### Memory Lifecycle
-1. User provides information
-2. Active agent adds to KV cache
-3. When block full (90% of context window):
-   - Agent generates summary
-   - Moves to inactive pool
-   - New active agent created
-4. Queries hit both active (recent) and inactive (historical) agents
-
-## 📚 Documentation
-
-- [docs/README.md](docs/README.md) - Complete documentation
-- [docs/QUICKSTART_TEXT_STORAGE.md](docs/QUICKSTART_TEXT_STORAGE.md) - Text storage quick start
-- [docs/ARCHITECTURE_COMPARISON.md](docs/ARCHITECTURE_COMPARISON.md) - KV Cache vs Text Storage
-- [docs/PERSISTENCE.md](docs/PERSISTENCE.md) - KV cache persistence
-- [docs/MODEL_COMPATIBILITY.md](docs/MODEL_COMPATIBILITY.md) - Model compatibility and migration
-- [evaluation/locomo/README.md](evaluation/locomo/README.md) - Evaluation guide
 
 ## 🧪 Testing
 
 ```bash
-pytest tests/                      # All tests
-pytest tests/test_memory_agent.py  # Specific test
+# Run all tests
+pytest tests/
+
+# Run with coverage
+pytest tests/ --cov=src --cov-report=html
+
+# Run specific test file
+pytest tests/test_chat_manager.py -v
 ```
 
-## 📂 Import Paths
+## 📚 Documentation
 
-```python
-# Core components
-from src.conversation_manager.factory import create_chat_manager
-from src.conversation_manager.chat_handler import ChatManager
+| Document | Description |
+|----------|-------------|
+| [docs/README.md](docs/README.md) | Complete documentation index |
+| [docs/QUICKSTART_TEXT_STORAGE.md](docs/QUICKSTART_TEXT_STORAGE.md) | Text storage quick start |
+| [docs/ARCHITECTURE_COMPARISON.md](docs/ARCHITECTURE_COMPARISON.md) | KV Cache vs Text Storage |
+| [docs/PERSISTENCE.md](docs/PERSISTENCE.md) | KV cache persistence |
+| [docs/API_REFERENCE.md](docs/API_REFERENCE.md) | API reference |
+| [evaluation/locomo/README.md](evaluation/locomo/README.md) | LoComo evaluation guide |
 
-# Evaluation
-from evaluation.locomo.load_dataset import load_locomo_dataset
-from evaluation.locomo.utils import calculate_metrics
+## 🎯 Use Cases
 
-# Configuration
-from config import MAX_CONCURRENT_GPU_OPERATIONS, DEFAULT_OVERLAP_RATIO
+### ✅ Best For
+
+- **Conversational AI**: Personal assistants, chatbots with memory
+- **User-specific Data**: Individual user memory management
+- **High Accuracy Needs**: Full context understanding required
+- **Local Deployment**: GPU-based KV cache for efficiency
+
+### ❌ Not Recommended For
+
+- **Enterprise RAG**: Vector DBs more efficient at scale
+- **Real-time Updates**: KV cache rebuild has overhead
+- **Task Agents**: Traditional RAG better for tool-heavy workflows
+
+## 🔬 Technical Details
+
+### KV Cache Mechanism
+
+1. Each memory chunk is processed through the model once
+2. KV tensors are cached and stored to disk (`.pt` files)
+3. During query, cached KV tensors are loaded and reused
+4. Position IDs ensure correct RoPE embeddings
+
+### Memory Lifecycle
+
+```
+User Input → Active Agent (add to KV cache)
+                    ↓
+            Block Full (90% capacity)?
+                    ↓ Yes
+            Generate Summary → Move to Inactive Pool
+                    ↓
+            Create New Active Agent
+                    ↓
+Query → Router (select by summary) → Parallel Query → Aggregate Results
 ```
 
 ## 📝 License
 
-This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
 
 ### Code Attribution
 
-The evaluation code in `evaluation/hotpotqa/eval_hotpotqa.py` is adapted from the GAM (Generalized Augmented Memory) framework, which is licensed under the MIT License. See the [NOTICE](NOTICE) file for more information about the original source and license terms.
+The evaluation code in `evaluation/hotpotqa/eval_hotpotqa.py` is adapted from the GAM framework (MIT License). See [NOTICE](NOTICE) for details.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please ensure:
+
+1. Run tests: `pytest tests/`
+2. Run linting: `ruff check .`
+3. Run pre-commit hooks: `pre-commit run --all-files`
