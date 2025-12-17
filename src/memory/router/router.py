@@ -25,8 +25,11 @@ class Router(BaseAgent):
     """
     Router that selects and queries relevant memory blocks.
     
-    Supports both shared model mode (sequential queries with single model)
-    and standalone mode (parallel queries with multiple models).
+    Supports multiple modes:
+    1. Router enabled (default): Uses LLM to select relevant blocks
+    2. Router disabled: Queries ALL inactive blocks (for evaluation/debugging)
+    3. Batch inference mode: True GPU parallelism via batching
+    4. Standalone mode: Parallel queries with separate models
     
     In shared model mode, queries are executed sequentially to avoid
     conflicts, but KV cache loading is still parallelized for I/O efficiency.
@@ -40,6 +43,7 @@ class Router(BaseAgent):
         max_blocks: int = 5,
         max_parallel_cache_loads: int = 8,
         query_batch_size: int = 4,
+        enable_router: bool = True,
     ) -> None:
         """
         Initialize Router.
@@ -51,18 +55,31 @@ class Router(BaseAgent):
             max_blocks: Maximum blocks to query.
             max_parallel_cache_loads: Max parallel KV cache loads to GPU.
             query_batch_size: Queries to batch together (for future batch inference).
+            enable_router: If False, skip LLM routing and query ALL blocks.
         """
-        if not openai_config:
+        # Allow None openai_config when router is disabled
+        if not openai_config and enable_router:
             raise NotImplementedError("Please provide openai_config for router.")
-        super().__init__(openai_config, system_prompt)
+        
+        # Initialize base class only if router is enabled
+        if enable_router:
+            super().__init__(openai_config, system_prompt)
+        else:
+            # Minimal init for disabled router
+            self.openai_config = openai_config
+            self.system_prompt = system_prompt
+            
         self.name = "router"
         self.agent: List[Any] = []
         self.max_memory_segments = max_memory_segments
         self.max_blocks = max_blocks
         self.max_parallel_cache_loads = max_parallel_cache_loads
         self.query_batch_size = query_batch_size
+        self.enable_router = enable_router
+        
+        router_status = "enabled" if enable_router else "DISABLED (querying all blocks)"
         logger.info(
-            f"Router initialized (max_memory_segments={max_memory_segments}, "
+            f"Router initialized (status={router_status}, max_memory_segments={max_memory_segments}, "
             f"max_blocks={max_blocks}, max_parallel_cache_loads={max_parallel_cache_loads})"
         )
 
@@ -91,6 +108,11 @@ class Router(BaseAgent):
         if not self.agent:
             logger.debug("No memory agents available for mapping")
             return []
+        
+        # If router is disabled, return ALL agents without LLM selection
+        if not self.enable_router:
+            logger.info(f"Router disabled, returning all {len(self.agent)} blocks for querying")
+            return self.agent.copy()  # Return copy to avoid modification
 
         summary_blocks = "\n".join(
             map(
@@ -238,6 +260,9 @@ class Router(BaseAgent):
                 logger.debug(f"Querying agent {i+1}/{len(agents)}")
                 result = agent.query(user_query)
                 results.append(result)
+                # Log each block's result
+                block_id = getattr(agent.current_block, 'block_id', f'agent_{i}')
+                logger.info(f"Block {block_id} result: {result[:200]}..." if len(result) > 200 else f"Block {block_id} result: {result}")
             except Exception as e:
                 logger.error(f"Error querying agent {i}: {e}", exc_info=True)
                 results.append(f"[ERROR] Query failed: {e}")
@@ -270,12 +295,25 @@ class Router(BaseAgent):
                 batch_results = self._execute_batch_query(batch_agents, user_query)
                 for i, result in zip(batch_indices, batch_results):
                     all_results[i] = result
+                    # Log each block's result
+                    agent = agents[i]
+                    block_id = getattr(agent.current_block, 'block_id', f'agent_{i}')
+                    logger.info(
+                        f"Block {block_id} result: {result[:200]}..." 
+                        if len(result) > 200 else f"Block {block_id} result: {result}"
+                    )
             except Exception as e:
                 logger.error(f"Batch query failed: {e}", exc_info=True)
                 # Fallback to sequential for this batch
                 for i, agent in zip(batch_indices, batch_agents):
                     try:
-                        all_results[i] = agent.query(user_query)
+                        result = agent.query(user_query)
+                        all_results[i] = result
+                        block_id = getattr(agent.current_block, 'block_id', f'agent_{i}')
+                        logger.info(
+                            f"Block {block_id} result (fallback): {result[:200]}..." 
+                            if len(result) > 200 else f"Block {block_id} result (fallback): {result}"
+                        )
                     except Exception as inner_e:
                         all_results[i] = f"[ERROR] Query failed: {inner_e}"
             

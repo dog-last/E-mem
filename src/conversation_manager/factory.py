@@ -22,6 +22,7 @@ def create_chat_manager(
     max_blocks: int = 5,
     query_batch_size: int = 4,
     max_parallel_cache_loads: int = 8,
+    enable_router: bool = True,
     **kwargs: Any,
 ) -> Any:
     """
@@ -44,6 +45,7 @@ def create_chat_manager(
         max_blocks: Maximum number of memory blocks to select by router
         query_batch_size: Queries to batch together (higher = more throughput, more memory)
         max_parallel_cache_loads: Max parallel KV cache loads to GPU
+        enable_router: If False, skip LLM routing and query ALL blocks directly
         **kwargs: Additional arguments passed to ChatManager
             For kv_cache mode: attn_implementation, device_map, quantization_config, max_memory, offload_folder
 
@@ -92,6 +94,7 @@ def create_chat_manager(
             max_blocks=max_blocks,
             query_batch_size=query_batch_size,
             max_parallel_cache_loads=max_parallel_cache_loads,
+            enable_router=enable_router,
             **kwargs,
         )
     elif storage_mode == "text":
@@ -122,6 +125,7 @@ def create_chat_manager(
             block_size_ratio=block_size_ratio,
             max_memory_segments=max_memory_segments,
             max_blocks=max_blocks,
+            enable_router=enable_router,
         )
     else:
         raise ValueError(

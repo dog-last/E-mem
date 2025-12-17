@@ -34,6 +34,7 @@ memory:
   query_batch_size: 2  # Number of queries to batch together for true GPU parallelism
   max_parallel_cache_loads: 4  # Maximum parallel KV cache loads to GPU
   kv_cache_on_gpu: false  # Keep inactive KV caches on GPU (only for high-memory setups)
+  enable_router: true  # Set to false to query ALL blocks without LLM routing (for evaluation)
 
 # LoComo Evaluation settings
 locomo_eval:

@@ -341,3 +341,49 @@ class TestRouter:
 
         # Should use instance max_blocks (2)
         assert len(result) == 2
+    
+    def test_init_router_disabled(self, mock_openai_config):
+        """Test Router initialization with enable_router=False."""
+        # Should not require openai_config when router is disabled
+        router = Router(openai_config=None, enable_router=False)
+
+        assert router.name == "router"
+        assert router.enable_router is False
+        assert router.agent == []
+    
+    def test_init_router_disabled_with_config(self, mock_openai_config):
+        """Test Router initialization with enable_router=False and config."""
+        router = Router(openai_config=mock_openai_config, enable_router=False)
+
+        assert router.enable_router is False
+    
+    def test_map_blocks_router_disabled_returns_all(self, mock_openai_config):
+        """Test _map_blocks returns all agents when router is disabled."""
+        router = Router(openai_config=None, enable_router=False)
+
+        # Add multiple agents
+        for i in range(5):
+            mock_agent = Mock()
+            mock_agent.is_active = False
+            mock_agent.summary = f"Summary {i}"
+            router.add_blocks(mock_agent)
+
+        # Call _map_blocks - should return ALL agents, ignoring max_blocks
+        result = router._map_blocks("Test query")
+
+        # Should return all 5 agents (not limited by max_blocks)
+        assert len(result) == 5
+    
+    def test_map_blocks_router_disabled_empty(self):
+        """Test _map_blocks with disabled router and no agents."""
+        router = Router(openai_config=None, enable_router=False)
+
+        result = router._map_blocks("Test query")
+
+        assert result == []
+    
+    @patch("src.agent.base.OpenAI")
+    def test_router_enabled_requires_config(self, mock_openai):
+        """Test that enabled router requires openai_config."""
+        with pytest.raises(NotImplementedError):
+            Router(openai_config=None, enable_router=True)

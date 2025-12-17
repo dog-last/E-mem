@@ -278,6 +278,47 @@ class TestTextMemoryHandler:
         assert call_kwargs["max_memory_segments"] == 10
         assert call_kwargs["max_blocks"] == 8
 
+    @patch("src.memory.core.text_loop_handler.Router")
+    @patch("src.memory.core.text_loop_handler.TextAddHandler")
+    def test_init_with_enable_router_true(self, mock_add_handler, mock_router_class):
+        """Test initialization with enable_router=True (default)."""
+        TextMemoryHandler(
+            model_id="test-model",
+            openai_config={"api_key": "test"},
+            enable_router=True,
+        )
+
+        call_kwargs = mock_router_class.call_args.kwargs
+        assert call_kwargs["enable_router"] is True
+
+    @patch("src.memory.core.text_loop_handler.Router")
+    @patch("src.memory.core.text_loop_handler.TextAddHandler")
+    def test_init_with_enable_router_false(self, mock_add_handler, mock_router_class):
+        """Test initialization with enable_router=False."""
+        TextMemoryHandler(
+            model_id="test-model",
+            openai_config={"api_key": "test"},
+            enable_router=False,
+        )
+
+        call_kwargs = mock_router_class.call_args.kwargs
+        assert call_kwargs["enable_router"] is False
+
+    @patch("src.memory.core.text_loop_handler.Router")
+    @patch("src.memory.core.text_loop_handler.TextAddHandler")
+    def test_init_router_disabled_no_config(self, mock_add_handler, mock_router_class):
+        """Test initialization with enable_router=False and no openai_config."""
+        # When router is disabled, it should not require openai_config
+        TextMemoryHandler(
+            model_id="test-model",
+            openai_config=None,
+            enable_router=False,
+        )
+
+        call_kwargs = mock_router_class.call_args.kwargs
+        assert call_kwargs["enable_router"] is False
+        assert call_kwargs["openai_config"] is None
+
     @patch("src.memory.core.text_loop_handler.save_text_agents_metadata")
     @patch("src.memory.core.text_loop_handler.Router")
     @patch("src.memory.core.text_loop_handler.TextAddHandler")

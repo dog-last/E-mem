@@ -37,6 +37,7 @@ class ChatManager(BaseChatManager):
         max_blocks: Maximum number of memory blocks to select by router.
         query_batch_size: Queries to batch together for inference.
         max_parallel_cache_loads: Maximum parallel KV cache loads to GPU.
+        enable_router: If False, query ALL blocks without LLM routing.
     """
 
     def __init__(
@@ -59,6 +60,7 @@ class ChatManager(BaseChatManager):
         max_blocks: int = 5,
         query_batch_size: int = 4,
         max_parallel_cache_loads: int = 8,
+        enable_router: bool = True,
     ) -> None:
         super().__init__(openai_config, system_prompt)
         self._name = "chat_manager"
@@ -84,6 +86,7 @@ class ChatManager(BaseChatManager):
             "max_blocks": max_blocks,
             "query_batch_size": query_batch_size,
             "max_parallel_cache_loads": max_parallel_cache_loads,
+            "enable_router": enable_router,
         }
 
         if router_system_prompt is not None:
@@ -127,6 +130,7 @@ class TextStorageChatManager(BaseChatManager):
         block_size_ratio: Block size relative to context window (0.0-1.0).
         max_memory_segments: Maximum memory segments to return per block query.
         max_blocks: Maximum number of memory blocks to select by router.
+        enable_router: If False, query ALL blocks without LLM routing.
     """
 
     def __init__(
@@ -142,6 +146,7 @@ class TextStorageChatManager(BaseChatManager):
         block_size_ratio: float = 0.125,
         max_memory_segments: Optional[int] = None,
         max_blocks: int = 5,
+        enable_router: bool = True,
     ) -> None:
         super().__init__(openai_config, system_prompt)
         self._name = "text_chat_manager"
@@ -162,6 +167,7 @@ class TextStorageChatManager(BaseChatManager):
             "block_size_ratio": block_size_ratio,
             "max_memory_segments": max_memory_segments,
             "max_blocks": max_blocks,
+            "enable_router": enable_router,
         }
 
         if router_system_prompt is not None:

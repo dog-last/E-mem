@@ -89,6 +89,11 @@ class MemoryConfig(BaseModel):
         description="Keep inactive KV caches on GPU for faster queries. "
         "Only enable if you have sufficient GPU memory (e.g., multiple A100s).",
     )
+    enable_router: bool = Field(
+        default=True,
+        description="Enable LLM-based router for selecting relevant blocks. "
+        "Set to False to query ALL blocks directly (useful for evaluation/debugging).",
+    )
 
     @field_validator("overlap_ratio")
     @classmethod

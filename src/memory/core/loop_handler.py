@@ -296,6 +296,7 @@ class MemoryHandler:
         # Resource control parameters for batch inference
         query_batch_size: int = 4,
         max_parallel_cache_loads: int = 8,
+        enable_router: bool = True,
     ):
         """
         Initialize MemoryHandler.
@@ -318,6 +319,7 @@ class MemoryHandler:
             max_blocks: Max blocks to query.
             query_batch_size: Queries to batch together.
             max_parallel_cache_loads: Max parallel KV cache loads.
+            enable_router: If False, query ALL blocks without LLM routing.
         """
         logger.info(
             f"Initializing MemoryHandler with model: {model_id}, overlap_ratio: {overlap_ratio}"
@@ -353,6 +355,7 @@ class MemoryHandler:
             "max_blocks": max_blocks,
             "max_parallel_cache_loads": max_parallel_cache_loads,
             "query_batch_size": query_batch_size,
+            "enable_router": enable_router,
         }
         if router_system_prompt is not None:
             router_kwargs["system_prompt"] = router_system_prompt

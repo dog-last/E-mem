@@ -132,6 +132,13 @@ class TextQueryHandler:
 
 
 class TextMemoryHandler:
+    """
+    Handler for text-based memory storage.
+    
+    Uses text storage with LLM API calls for memory retrieval.
+    Does not require GPU.
+    """
+    
     def __init__(
         self,
         model_id: str,
@@ -144,7 +151,24 @@ class TextMemoryHandler:
         block_size_ratio: float = 0.125,
         max_memory_segments: int = None,
         max_blocks: int = 5,
+        enable_router: bool = True,
     ):
+        """
+        Initialize TextMemoryHandler.
+        
+        Args:
+            model_id: HuggingFace model ID (used for tokenization).
+            openai_config: OpenAI API configuration for all LLM operations.
+            clean_cache_first: Whether to clean cache on initialization.
+            model_context_window: Model's context window size.
+            router_system_prompt: Custom router system prompt.
+            overlap_ratio: Overlap ratio between blocks.
+            overlap_mode: Overlap handling strategy.
+            block_size_ratio: Block size relative to context window.
+            max_memory_segments: Maximum memory segments per query.
+            max_blocks: Maximum number of blocks to query.
+            enable_router: If False, query ALL blocks without LLM routing.
+        """
         logger.info(f"Initializing TextMemoryHandler with model: {model_id}")
         self.model_id = model_id
         self.openai_config = openai_config
@@ -165,6 +189,7 @@ class TextMemoryHandler:
             "openai_config": openai_config,
             "max_memory_segments": max_memory_segments,
             "max_blocks": max_blocks,
+            "enable_router": enable_router,
         }
         if router_system_prompt is not None:
             router_kwargs["system_prompt"] = router_system_prompt

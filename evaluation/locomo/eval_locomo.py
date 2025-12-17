@@ -137,6 +137,7 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
             # Resource control parameters for batch inference
             query_batch_size=config['memory'].get('query_batch_size', 4),
             max_parallel_cache_loads=config['memory'].get('max_parallel_cache_loads', 8),
+            enable_router=config['memory'].get('enable_router', True),
         )
         
         # Store conversations
