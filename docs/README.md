@@ -133,6 +133,25 @@ manager = create_chat_manager(
 | `overlap_mode` | chunk/token | chunk | How overlap is calculated |
 | `block_size_ratio` | 0.0-1.0 | 0.125 | Block size vs context window |
 | `max_concurrent_gpu_operations` | 1-8 | 2 | Parallel GPU operations |
+| `max_memory_segments` | 1-∞ | None | Max segments returned per query (None=unlimited) |
+| `max_blocks` | 1-∞ | 5 | Max memory blocks selected by router |
+
+### Query Result Limiting
+
+The `max_memory_segments` parameter controls how many `<memory_segment>` elements are returned in query responses. This is useful for:
+
+- **Reducing response length** when dealing with large memory blocks
+- **Controlling LLM context** in downstream aggregation
+- **Improving response relevance** by keeping only top segments
+
+```python
+# Limit to top 3 segments per query
+manager = create_chat_manager(
+    storage_mode="kv_cache",
+    max_memory_segments=3,
+    max_blocks=5  # Also limit router block selection
+)
+```
 
 ### Overlap Modes
 

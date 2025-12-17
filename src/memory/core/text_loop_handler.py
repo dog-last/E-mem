@@ -132,21 +132,44 @@ class TextQueryHandler:
 
 
 class TextMemoryHandler:
-    def __init__(self, model_id: str, openai_config: dict, clean_cache_first: bool = True,
-                 model_context_window: int = 32768, router_system_prompt: str = None,
-                  overlap_ratio: float = 0.1, overlap_mode: str = "chunk", block_size_ratio: float=0.125):
+    def __init__(
+        self,
+        model_id: str,
+        openai_config: dict,
+        clean_cache_first: bool = True,
+        model_context_window: int = 32768,
+        router_system_prompt: str = None,
+        overlap_ratio: float = 0.1,
+        overlap_mode: str = "chunk",
+        block_size_ratio: float = 0.125,
+        max_memory_segments: int = None,
+        max_blocks: int = 5,
+    ):
         logger.info(f"Initializing TextMemoryHandler with model: {model_id}")
         self.model_id = model_id
         self.openai_config = openai_config
         self.model_context_window = model_context_window
-        self.block_size_ratio=block_size_ratio
-        self.add_handler = TextAddHandler(model_id, openai_config, model_context_window, overlap_ratio, overlap_mode,block_size_ratio)
+        self.block_size_ratio = block_size_ratio
+        self.add_handler = TextAddHandler(
+            model_id,
+            openai_config,
+            model_context_window,
+            overlap_ratio,
+            overlap_mode,
+            block_size_ratio,
+        )
         self.inactive_memory_agents = []
-        
-        if router_system_prompt is None:
-            self.query_handler = TextQueryHandler(Router(openai_config=openai_config))
-        else:
-            self.query_handler = TextQueryHandler(Router(openai_config=openai_config, system_prompt=router_system_prompt))
+
+        # Create router with memory segment and block limits
+        router_kwargs = {
+            "openai_config": openai_config,
+            "max_memory_segments": max_memory_segments,
+            "max_blocks": max_blocks,
+        }
+        if router_system_prompt is not None:
+            router_kwargs["system_prompt"] = router_system_prompt
+
+        self.query_handler = TextQueryHandler(Router(**router_kwargs))
         
         if clean_cache_first:
             logger.info("Clearing text cache and metadata")

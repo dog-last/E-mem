@@ -153,6 +153,8 @@ memory:
   overlap_mode: "chunk"         # chunk or token
   block_size_ratio: 0.125       # 0.0-1.0
   max_concurrent_gpu_operations: 2
+  max_memory_segments: 5        # Max segments returned per query (optional)
+  max_blocks: 5                 # Max memory blocks selected by router
 
 max_memory:
   0: "20GB"
@@ -168,7 +170,9 @@ from src.config import load_and_validate_config, MemoryConfig
 memory_config = MemoryConfig(
     storage_mode="kv_cache",
     overlap_ratio=0.1,
-    block_size_ratio=0.125
+    block_size_ratio=0.125,
+    max_memory_segments=5,
+    max_blocks=5
 )
 
 # Load and validate full config

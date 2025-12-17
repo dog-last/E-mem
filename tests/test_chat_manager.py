@@ -332,16 +332,261 @@ class TestChatManager:
         mock_response.choices = [Mock(message=mock_message)]
         mock_client.chat.completions.create.return_value = mock_response
         mock_openai.return_value = mock_client
-        
+
         chat = ChatManager(
             model_id="test-model",
             openai_config=mock_openai_config
         )
-        
+
         response = chat.chat("Hello", auto_save=False)
-        
+
         # Verify LLM was called
         mock_client.chat.completions.create.assert_called_once()
-        
+
         # Verify response is from LLM
         assert response == "LLM response"
+
+    @patch("src.conversation_manager.chat_handler.MemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_init_with_memory_segment_params(self, mock_openai, mock_memory_handler, mock_openai_config):
+        """Test ChatManager initialization with max_memory_segments and max_blocks."""
+        chat = ChatManager(
+            model_id="test-model",
+            openai_config=mock_openai_config,
+            max_memory_segments=10,
+            max_blocks=3,
+        )
+
+        assert chat.name == "chat_manager"
+        # Verify params were passed to MemoryHandler
+        call_kwargs = mock_memory_handler.call_args.kwargs
+        assert call_kwargs["max_memory_segments"] == 10
+        assert call_kwargs["max_blocks"] == 3
+
+    @patch("src.conversation_manager.chat_handler.MemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_init_invalid_block_size_ratio(self, mock_openai, mock_memory_handler, mock_openai_config):
+        """Test ChatManager raises error for invalid block_size_ratio."""
+        import pytest
+
+        with pytest.raises(ValueError, match="block_size_ratio"):
+            ChatManager(
+                model_id="test-model",
+                openai_config=mock_openai_config,
+                block_size_ratio=0,  # Invalid: must be > 0
+            )
+
+        with pytest.raises(ValueError, match="block_size_ratio"):
+            ChatManager(
+                model_id="test-model",
+                openai_config=mock_openai_config,
+                block_size_ratio=1.5,  # Invalid: must be <= 1
+            )
+
+    @patch("src.conversation_manager.chat_handler.MemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_init_with_all_optional_params(
+        self, mock_openai, mock_memory_handler, mock_openai_config
+    ):
+        """Test ChatManager with all optional parameters."""
+        chat = ChatManager(
+            model_id="test-model",
+            openai_config=mock_openai_config,
+            clean_cache_first=False,
+            model_context_window=16384,
+            attn_implementation="flash_attention_2",
+            device_map="cuda:0",
+            router_system_prompt="Custom prompt",
+            quantization_config={"load_in_4bit": True},
+            max_memory={"0": "20GB"},
+            offload_folder="/tmp/offload",
+            overlap_mode="token",
+            overlap_ratio=0.2,
+            block_size_ratio=0.25,
+            max_memory_segments=3,
+            max_blocks=10,
+        )
+
+        assert chat.name == "chat_manager"
+        call_kwargs = mock_memory_handler.call_args.kwargs
+        assert call_kwargs["clean_cache_first"] is False
+        assert call_kwargs["model_context_window"] == 16384
+        assert call_kwargs["router_system_prompt"] == "Custom prompt"
+        assert call_kwargs["quantization_config"] == {"load_in_4bit": True}
+        assert call_kwargs["max_memory"] == {"0": "20GB"}
+        assert call_kwargs["offload_folder"] == "/tmp/offload"
+        assert call_kwargs["overlap_mode"] == "token"
+        assert call_kwargs["overlap_ratio"] == 0.2
+        assert call_kwargs["block_size_ratio"] == 0.25
+
+
+class TestTextStorageChatManager:
+    """Test TextStorageChatManager functionality."""
+
+    @patch("src.conversation_manager.chat_handler.TextMemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_init(self, mock_openai, mock_memory_handler, mock_openai_config):
+        """Test TextStorageChatManager initialization."""
+        from src.conversation_manager.chat_handler import TextStorageChatManager
+
+        chat = TextStorageChatManager(
+            model_id="test-model",
+            openai_config=mock_openai_config,
+        )
+
+        assert chat.name == "text_chat_manager"
+        mock_memory_handler.assert_called_once()
+
+    @patch("src.conversation_manager.chat_handler.TextMemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_init_with_memory_segment_params(
+        self, mock_openai, mock_memory_handler, mock_openai_config
+    ):
+        """Test TextStorageChatManager with max_memory_segments and max_blocks."""
+        from src.conversation_manager.chat_handler import TextStorageChatManager
+
+        chat = TextStorageChatManager(
+            model_id="test-model",
+            openai_config=mock_openai_config,
+            max_memory_segments=5,
+            max_blocks=8,
+        )
+
+        assert chat.name == "text_chat_manager"
+        call_kwargs = mock_memory_handler.call_args.kwargs
+        assert call_kwargs["max_memory_segments"] == 5
+        assert call_kwargs["max_blocks"] == 8
+
+    @patch("src.conversation_manager.chat_handler.TextMemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_init_invalid_block_size_ratio(
+        self, mock_openai, mock_memory_handler, mock_openai_config
+    ):
+        """Test TextStorageChatManager raises error for invalid block_size_ratio."""
+        import pytest
+
+        from src.conversation_manager.chat_handler import TextStorageChatManager
+
+        with pytest.raises(ValueError, match="block_size_ratio"):
+            TextStorageChatManager(
+                model_id="test-model",
+                openai_config=mock_openai_config,
+                block_size_ratio=0,
+            )
+
+    @patch("src.conversation_manager.chat_handler.TextMemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_chat(self, mock_openai, mock_memory_handler, mock_openai_config):
+        """Test TextStorageChatManager chat method."""
+        from src.conversation_manager.chat_handler import TextStorageChatManager
+
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_message = Mock()
+        mock_message.content = "Test response"
+        mock_message.tool_calls = None
+        mock_response.choices = [Mock(message=mock_message)]
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        chat = TextStorageChatManager(
+            model_id="test-model",
+            openai_config=mock_openai_config,
+        )
+
+        response = chat.chat("Hello")
+
+        assert response == "Test response"
+        assert chat.handle_user_input == "Hello"
+
+
+class TestCreateChatManagerFactory:
+    """Test create_chat_manager factory function."""
+
+    @patch("src.conversation_manager.chat_handler.MemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_create_kv_cache_manager(
+        self, mock_openai, mock_memory_handler, mock_openai_config
+    ):
+        """Test creating KV cache ChatManager."""
+        from src.conversation_manager.factory import create_chat_manager
+
+        manager = create_chat_manager(
+            storage_mode="kv_cache",
+            model_id="test-model",
+            openai_config=mock_openai_config,
+        )
+
+        assert manager.name == "chat_manager"
+
+    @patch("src.conversation_manager.chat_handler.TextMemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_create_text_manager(
+        self, mock_openai, mock_memory_handler, mock_openai_config
+    ):
+        """Test creating text storage ChatManager."""
+        from src.conversation_manager.factory import create_chat_manager
+
+        manager = create_chat_manager(
+            storage_mode="text",
+            model_id="test-model",
+            openai_config=mock_openai_config,
+        )
+
+        assert manager.name == "text_chat_manager"
+
+    def test_create_invalid_storage_mode(self, mock_openai_config):
+        """Test creating with invalid storage mode raises error."""
+        import pytest
+
+        from src.conversation_manager.factory import create_chat_manager
+
+        with pytest.raises(ValueError, match="Invalid storage_mode"):
+            create_chat_manager(
+                storage_mode="invalid",
+                model_id="test-model",
+                openai_config=mock_openai_config,
+            )
+
+    @patch("src.conversation_manager.chat_handler.TextMemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_text_mode_ignores_gpu_params(
+        self, mock_openai, mock_memory_handler, mock_openai_config
+    ):
+        """Test text storage mode ignores GPU-specific parameters."""
+        import logging
+
+        from src.conversation_manager.factory import create_chat_manager
+
+        with patch.object(logging.getLogger("src.conversation_manager.factory"), "warning") as mock_warn:
+            manager = create_chat_manager(
+                storage_mode="text",
+                model_id="test-model",
+                openai_config=mock_openai_config,
+                attn_implementation="sdpa",  # GPU param, should be ignored
+                device_map="auto",  # GPU param, should be ignored
+            )
+
+            assert manager.name == "text_chat_manager"
+            # Verify warning was logged
+            mock_warn.assert_called()
+
+    @patch("src.conversation_manager.chat_handler.MemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_factory_passes_memory_segment_params(
+        self, mock_openai, mock_memory_handler, mock_openai_config
+    ):
+        """Test factory passes max_memory_segments and max_blocks."""
+        from src.conversation_manager.factory import create_chat_manager
+
+        create_chat_manager(
+            storage_mode="kv_cache",
+            model_id="test-model",
+            openai_config=mock_openai_config,
+            max_memory_segments=7,
+            max_blocks=12,
+        )
+
+        call_kwargs = mock_memory_handler.call_args.kwargs
+        assert call_kwargs["max_memory_segments"] == 7
+        assert call_kwargs["max_blocks"] == 12

@@ -8,16 +8,28 @@ from src.memory.router.router import Router
 
 class TestRouter:
     """Test Router functionality."""
-    
+
     @patch("src.agent.base.OpenAI")
     def test_init(self, mock_openai, mock_openai_config):
         """Test Router initialization."""
         router = Router(openai_config=mock_openai_config)
-        
+
         assert router.name == "router"
         assert router.agent == []
+        assert router.max_memory_segments is None
+        assert router.max_blocks == 5
         mock_openai.assert_called_once()
-    
+
+    @patch("src.agent.base.OpenAI")
+    def test_init_with_memory_segment_limit(self, mock_openai, mock_openai_config):
+        """Test Router initialization with memory segment limit."""
+        router = Router(
+            openai_config=mock_openai_config, max_memory_segments=3, max_blocks=10
+        )
+
+        assert router.max_memory_segments == 3
+        assert router.max_blocks == 10
+
     def test_init_no_config(self):
         """Test initialization without config raises error."""
         with pytest.raises(NotImplementedError):
@@ -218,15 +230,114 @@ class TestRouter:
         mock_response.choices = [Mock(message=mock_message)]
         mock_client.chat.completions.create.return_value = mock_response
         mock_openai.return_value = mock_client
-        
+
         router = Router(openai_config=mock_openai_config)
-        
+
         mock_agent = Mock()
         mock_agent.is_active = False
         mock_agent.summary = "Summary"
         router.add_blocks(mock_agent)
-        
+
         result = router._map_blocks("Test query", max_blocks=5)
-        
+
         # When parsing fails (no valid integers), returns empty list
         assert len(result) == 0
+
+    @patch("src.agent.base.OpenAI")
+    def test_map_reduce_blocks_with_segment_limit(self, mock_openai, mock_openai_config):
+        """Test map_reduce_blocks applies memory segment limit."""
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_message = Mock()
+        mock_message.content = "<summary_index>0</summary_index>"
+        mock_message.tool_calls = None
+        mock_response.choices = [Mock(message=mock_message)]
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        # Create router with segment limit
+        router = Router(openai_config=mock_openai_config, max_memory_segments=2)
+
+        # Mock agent that returns response with many segments
+        mock_agent = Mock()
+        mock_agent.is_active = False
+        mock_agent.summary = "Summary"
+        mock_agent.query.return_value = """<response_type>retrieval</response_type>
+<relevant_memories>
+    <memory_segment>Memory 1</memory_segment>
+    <memory_segment>Memory 2</memory_segment>
+    <memory_segment>Memory 3</memory_segment>
+    <memory_segment>Memory 4</memory_segment>
+</relevant_memories>"""
+
+        router.add_blocks(mock_agent)
+
+        result = router.map_reduce_blocks("Test query")
+
+        assert len(result) == 1
+        # Should have only 2 segments due to limit
+        assert result[0].count("<memory_segment>") == 2
+        assert "Memory 1" in result[0]
+        assert "Memory 2" in result[0]
+        assert "Memory 3" not in result[0]
+        assert "Memory 4" not in result[0]
+
+    @patch("src.agent.base.OpenAI")
+    def test_map_reduce_blocks_no_segment_limit(self, mock_openai, mock_openai_config):
+        """Test map_reduce_blocks without segment limit preserves all segments."""
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_message = Mock()
+        mock_message.content = "<summary_index>0</summary_index>"
+        mock_message.tool_calls = None
+        mock_response.choices = [Mock(message=mock_message)]
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        # Create router without segment limit
+        router = Router(openai_config=mock_openai_config, max_memory_segments=None)
+
+        mock_agent = Mock()
+        mock_agent.is_active = False
+        mock_agent.summary = "Summary"
+        mock_agent.query.return_value = """<response_type>retrieval</response_type>
+<relevant_memories>
+    <memory_segment>Memory 1</memory_segment>
+    <memory_segment>Memory 2</memory_segment>
+    <memory_segment>Memory 3</memory_segment>
+</relevant_memories>"""
+
+        router.add_blocks(mock_agent)
+
+        result = router.map_reduce_blocks("Test query")
+
+        assert len(result) == 1
+        # Should preserve all 3 segments
+        assert result[0].count("<memory_segment>") == 3
+
+    @patch("src.agent.base.OpenAI")
+    def test_map_blocks_uses_instance_max_blocks(self, mock_openai, mock_openai_config):
+        """Test _map_blocks uses instance max_blocks when not specified."""
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_message = Mock()
+        mock_message.content = "<summary_index>0,1,2,3,4</summary_index>"
+        mock_message.tool_calls = None
+        mock_response.choices = [Mock(message=mock_message)]
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        # Create router with max_blocks=2
+        router = Router(openai_config=mock_openai_config, max_blocks=2)
+
+        for i in range(5):
+            mock_agent = Mock()
+            mock_agent.is_active = False
+            mock_agent.summary = f"Summary {i}"
+            router.add_blocks(mock_agent)
+
+        # Call without max_blocks parameter
+        result = router._map_blocks("Test query")
+
+        # Should use instance max_blocks (2)
+        assert len(result) == 2

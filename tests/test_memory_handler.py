@@ -433,3 +433,179 @@ class TestMemoryHandler:
         args = call_args[0]
         assert len(args) >= 9, f"AddHandler should be called with at least 9 positional arguments, got {len(args)}"
         assert args[8] == "token", f"overlap_mode should be 'token', got {args[8]}"
+
+    @patch("src.memory.core.loop_handler.save_agents_metadata")
+    @patch("src.memory.core.loop_handler.load_agents_metadata")
+    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.AddHandler")
+    def test_add_memory_with_overlap_token_mode(
+        self, mock_add_handler_class, mock_router_class, mock_load_meta, mock_save_meta
+    ):
+        """Test add_memory with overlap memories in token mode."""
+        import os
+        os.environ['EVAL_SESSION_ID'] = 'test_session'
+        mock_load_meta.return_value = []
+
+        mock_block = Mock()
+        mock_block.block_id = "test-id"
+        mock_block.create_timestamp = "20231201_120000"
+        mock_block.block_used = 100
+        mock_block.chunk_num = 5
+
+        mock_agent = Mock()
+        mock_agent.is_active = True
+        mock_agent.summary = "Test summary"
+        mock_agent.current_block = mock_block
+        mock_agent.chunk_number = 5
+        mock_agent.model_id = "test-model"
+        mock_agent.saved_chunks = []
+
+        mock_new_agent = Mock()
+        mock_new_agent.is_active = True
+        mock_new_agent.add = Mock()
+
+        mock_add_handler = Mock()
+        mock_add_handler.add_memory.return_value = False  # Agent becomes inactive
+        mock_add_handler.active_memory_agent = mock_agent
+        mock_add_handler.overlap_mode = "token"
+        mock_add_handler.get_overlap_memories.return_value = ["overlap content"]
+        mock_add_handler.create_agent = Mock(
+            side_effect=lambda: setattr(mock_add_handler, 'active_memory_agent', mock_new_agent)
+        )
+        mock_add_handler_class.return_value = mock_add_handler
+
+        mock_router = Mock()
+        mock_router_class.return_value = mock_router
+
+        handler = MemoryHandler(model_id="test-model", openai_config={"api_key": "test"})
+        handler.add_memory("Test memory")
+
+        # Overlap memories should be added to new agent in token mode
+        mock_new_agent.add.assert_called_once_with(["overlap content"])
+
+        if 'EVAL_SESSION_ID' in os.environ:
+            del os.environ['EVAL_SESSION_ID']
+
+    @patch("src.memory.core.loop_handler.save_agents_metadata")
+    @patch("src.memory.core.loop_handler.load_agents_metadata")
+    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.AddHandler")
+    def test_add_memory_with_overlap_chunk_mode(
+        self, mock_add_handler_class, mock_router_class, mock_load_meta, mock_save_meta
+    ):
+        """Test add_memory with overlap memories in chunk mode."""
+        import os
+        os.environ['EVAL_SESSION_ID'] = 'test_session'
+        mock_load_meta.return_value = []
+
+        mock_block = Mock()
+        mock_block.block_id = "test-id"
+        mock_block.create_timestamp = "20231201_120000"
+        mock_block.block_used = 100
+        mock_block.chunk_num = 5
+
+        mock_agent = Mock()
+        mock_agent.is_active = True
+        mock_agent.summary = "Test summary"
+        mock_agent.current_block = mock_block
+        mock_agent.chunk_number = 5
+        mock_agent.model_id = "test-model"
+        mock_agent.saved_chunks = []
+
+        mock_new_agent = Mock()
+        mock_new_agent.is_active = True
+        mock_new_agent.add = Mock()
+
+        mock_add_handler = Mock()
+        mock_add_handler.add_memory.return_value = False  # Agent becomes inactive
+        mock_add_handler.active_memory_agent = mock_agent
+        mock_add_handler.overlap_mode = "chunk"
+        mock_add_handler.get_overlap_memories.return_value = ["chunk1", "chunk2"]
+        mock_add_handler.create_agent = Mock(
+            side_effect=lambda: setattr(mock_add_handler, 'active_memory_agent', mock_new_agent)
+        )
+        mock_add_handler_class.return_value = mock_add_handler
+
+        mock_router = Mock()
+        mock_router_class.return_value = mock_router
+
+        handler = MemoryHandler(model_id="test-model", openai_config={"api_key": "test"})
+        handler.add_memory("Test memory")
+
+        # Overlap memories should be added individually in chunk mode
+        assert mock_new_agent.add.call_count == 2
+        mock_new_agent.add.assert_any_call(["chunk1"])
+        mock_new_agent.add.assert_any_call(["chunk2"])
+
+        if 'EVAL_SESSION_ID' in os.environ:
+            del os.environ['EVAL_SESSION_ID']
+
+    @patch("src.memory.core.loop_handler.save_agents_metadata")
+    @patch("src.memory.core.loop_handler.load_agents_metadata")
+    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.AddHandler")
+    def test_add_memory_already_inactive_agent(
+        self, mock_add_handler_class, mock_router_class, mock_load_meta, mock_save_meta
+    ):
+        """Test add_memory when agent is already inactive before add."""
+        import os
+        os.environ['EVAL_SESSION_ID'] = 'test_session'
+        mock_load_meta.return_value = []
+
+        mock_block = Mock()
+        mock_block.block_id = "test-id"
+        mock_block.create_timestamp = "20231201_120000"
+        mock_block.block_used = 100
+        mock_block.chunk_num = 5
+
+        # Agent that is already inactive
+        mock_agent = Mock()
+        mock_agent.is_active = False  # Already inactive
+        mock_agent.summary = "Test summary"
+        mock_agent.current_block = mock_block
+        mock_agent.chunk_number = 5
+        mock_agent.model_id = "test-model"
+        mock_agent.saved_chunks = []
+
+        mock_new_agent = Mock()
+        mock_new_agent.is_active = True
+        mock_new_agent.add = Mock()
+
+        mock_add_handler = Mock()
+        mock_add_handler.add_memory.return_value = True  # New agent stays active
+        mock_add_handler.active_memory_agent = mock_agent
+        mock_add_handler.overlap_mode = "chunk"
+        mock_add_handler.get_overlap_memories.return_value = []
+        mock_add_handler.create_agent = Mock(
+            side_effect=lambda: setattr(mock_add_handler, 'active_memory_agent', mock_new_agent)
+        )
+        mock_add_handler_class.return_value = mock_add_handler
+
+        mock_router = Mock()
+        mock_router_class.return_value = mock_router
+
+        handler = MemoryHandler(model_id="test-model", openai_config={"api_key": "test"})
+        handler.add_memory("Test memory")
+
+        # Should have transitioned and created new agent
+        mock_add_handler.create_agent.assert_called()
+        mock_router.add_blocks.assert_called_with(mock_agent)
+
+        if 'EVAL_SESSION_ID' in os.environ:
+            del os.environ['EVAL_SESSION_ID']
+
+    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.AddHandler")
+    def test_init_with_memory_segment_params(self, mock_add_handler, mock_router_class):
+        """Test initialization with max_memory_segments and max_blocks."""
+        _ = MemoryHandler(
+            model_id="test-model",
+            openai_config={"api_key": "test"},
+            max_memory_segments=10,
+            max_blocks=8
+        )
+
+        # Verify Router was called with correct params
+        call_kwargs = mock_router_class.call_args.kwargs
+        assert call_kwargs["max_memory_segments"] == 10
+        assert call_kwargs["max_blocks"] == 8

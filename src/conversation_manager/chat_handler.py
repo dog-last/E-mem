@@ -33,6 +33,8 @@ class ChatManager(BaseChatManager):
         overlap_mode: Overlap handling strategy ('chunk' or 'token').
         overlap_ratio: Overlap ratio between blocks (0.0-1.0).
         block_size_ratio: Block size relative to context window (0.0-1.0).
+        max_memory_segments: Maximum memory segments to return per block query.
+        max_blocks: Maximum number of memory blocks to select by router.
     """
 
     def __init__(
@@ -51,6 +53,8 @@ class ChatManager(BaseChatManager):
         overlap_mode: str = "chunk",
         overlap_ratio: float = 0.1,
         block_size_ratio: float = 0.125,
+        max_memory_segments: Optional[int] = None,
+        max_blocks: int = 5,
     ) -> None:
         super().__init__(openai_config, system_prompt)
         self._name = "chat_manager"
@@ -72,6 +76,8 @@ class ChatManager(BaseChatManager):
             "overlap_ratio": overlap_ratio,
             "overlap_mode": overlap_mode,
             "block_size_ratio": block_size_ratio,
+            "max_memory_segments": max_memory_segments,
+            "max_blocks": max_blocks,
         }
 
         if router_system_prompt is not None:
@@ -113,6 +119,8 @@ class TextStorageChatManager(BaseChatManager):
         overlap_mode: Overlap handling strategy ('chunk' or 'token').
         overlap_ratio: Overlap ratio between blocks (0.0-1.0).
         block_size_ratio: Block size relative to context window (0.0-1.0).
+        max_memory_segments: Maximum memory segments to return per block query.
+        max_blocks: Maximum number of memory blocks to select by router.
     """
 
     def __init__(
@@ -126,6 +134,8 @@ class TextStorageChatManager(BaseChatManager):
         overlap_mode: str = "chunk",
         overlap_ratio: float = 0.1,
         block_size_ratio: float = 0.125,
+        max_memory_segments: Optional[int] = None,
+        max_blocks: int = 5,
     ) -> None:
         super().__init__(openai_config, system_prompt)
         self._name = "text_chat_manager"
@@ -144,6 +154,8 @@ class TextStorageChatManager(BaseChatManager):
             "overlap_ratio": overlap_ratio,
             "overlap_mode": overlap_mode,
             "block_size_ratio": block_size_ratio,
+            "max_memory_segments": max_memory_segments,
+            "max_blocks": max_blocks,
         }
 
         if router_system_prompt is not None:

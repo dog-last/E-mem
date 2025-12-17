@@ -21,7 +21,10 @@ memory:
   router_system_prompt: null
   overlap_ratio: 0.1  # Overlap ratio between KV blocks (0.0-1.0)
   overlap_mode: "chunk"  # "chunk" or "token" - overlap handling strategy
+  block_size_ratio: 0.125  # Block size ratio relative to model context window (0.0-1.0)
   max_concurrent_gpu_operations: 2  # Number of concurrent GPU operations for parallel queries
+  max_memory_segments: 5  # Maximum number of memory segments to return in query response
+  max_blocks: 5  # Maximum number of memory blocks to select by the router
 
 # LoComo Evaluation settings
 locomo_eval:

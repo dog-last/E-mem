@@ -171,9 +171,25 @@ manager = ChatManager(
     model_context_window=32768,
     attn_implementation="sdpa",
     device_map="auto",
-    block_size_ratio=0.125
+    block_size_ratio=0.125,
+    max_memory_segments=5,  # Limit segments returned per query
+    max_blocks=5            # Limit blocks selected by router
 )
 ```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model_id` | `str` | required | HuggingFace model ID or local path |
+| `openai_config` | `dict` | required | OpenAI API configuration |
+| `model_context_window` | `int` | `32768` | Model context window size |
+| `attn_implementation` | `str` | `"sdpa"` | Attention implementation |
+| `device_map` | `str` | `"auto"` | Device mapping strategy |
+| `block_size_ratio` | `float` | `0.125` | Block size ratio (0.0-1.0) |
+| `overlap_ratio` | `float` | `0.1` | Overlap ratio (0.0-0.5) |
+| `max_memory_segments` | `int` | `None` | Max segments per query (None=unlimited) |
+| `max_blocks` | `int` | `5` | Max blocks selected by router |
 
 **Properties:**
 
@@ -193,9 +209,23 @@ manager = TextStorageChatManager(
     model_id="Qwen/Qwen3-4B",
     openai_config={"api_key": "your-key"},
     model_context_window=32768,
-    block_size_ratio=0.125
+    block_size_ratio=0.125,
+    max_memory_segments=5,
+    max_blocks=5
 )
 ```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model_id` | `str` | required | HuggingFace model ID (for tokenization) |
+| `openai_config` | `dict` | required | OpenAI API configuration |
+| `model_context_window` | `int` | `32768` | Model context window size |
+| `block_size_ratio` | `float` | `0.125` | Block size ratio (0.0-1.0) |
+| `overlap_ratio` | `float` | `0.1` | Overlap ratio (0.0-0.5) |
+| `max_memory_segments` | `int` | `None` | Max segments per query (None=unlimited) |
+| `max_blocks` | `int` | `5` | Max blocks selected by router |
 
 **Properties:**
 

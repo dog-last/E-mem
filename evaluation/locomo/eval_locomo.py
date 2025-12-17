@@ -131,7 +131,9 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
             overlap_mode=config['memory'].get('overlap_mode', 'chunk'),
             overlap_ratio=config['memory'].get('overlap_ratio', 0.1),
             block_size_ratio=config['memory'].get('block_size_ratio', 0.125),
-            max_memory=config.get('max_memory')
+            max_memory=config.get('max_memory'),
+            max_memory_segments=config['memory'].get('max_memory_segments'),
+            max_blocks=config['memory'].get('max_blocks', 5),
         )
         
         # Store conversations

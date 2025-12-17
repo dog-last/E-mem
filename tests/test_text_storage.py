@@ -87,3 +87,105 @@ def test_text_handler_overlap_mode_default():
         openai_config={"api_key": "test"}
     )
     assert handler.add_handler.overlap_mode == "chunk"  # Default should be chunk
+
+
+def test_text_handler_with_memory_segment_params():
+    """Test TextMemoryHandler with max_memory_segments and max_blocks."""
+    handler = TextMemoryHandler(
+        model_id="test-model",
+        openai_config={"api_key": "test"},
+        max_memory_segments=3,
+        max_blocks=10,
+    )
+    assert handler.query_handler.router.max_memory_segments == 3
+    assert handler.query_handler.router.max_blocks == 10
+
+
+def test_text_block_save_and_load():
+    """Test TextBlock save and load functionality."""
+    block_id = uuid.uuid4()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    block = TextBlock(
+        block_id=block_id,
+        create_timestamp=timestamp,
+        block_size=1000,
+    )
+
+    # Add some chunks - add_chunk auto-saves
+    block.add_chunk("First memory chunk", 50)
+    block.add_chunk("Second memory chunk", 60)
+
+    # Create new block with same ID and load
+    loaded_block = TextBlock(
+        block_id=block_id,
+        create_timestamp=timestamp,
+        block_size=1000,
+    )
+    loaded_block.load()
+
+    # Verify data
+    text = loaded_block.get_all_text()
+    assert "First memory chunk" in text
+    assert "Second memory chunk" in text
+    assert loaded_block.chunk_num == 2
+
+    # Cleanup
+    clear_text_cache()
+
+
+def test_text_block_is_full():
+    """Test TextBlock is_full detection."""
+    block = TextBlock(
+        block_id=uuid.uuid4(),
+        create_timestamp=datetime.now().strftime("%Y%m%d_%H%M%S"),
+        block_size=100,  # Small block
+    )
+
+    # Not full initially
+    assert not block.is_full()
+
+    # Add chunk that fills it
+    block.add_chunk("Large content", 100)
+    assert block.is_full()
+
+
+def test_text_block_get_all_text_empty():
+    """Test TextBlock get_all_text with no chunks."""
+    block = TextBlock(
+        block_id=uuid.uuid4(),
+        create_timestamp=datetime.now().strftime("%Y%m%d_%H%M%S"),
+        block_size=1000,
+    )
+
+    text = block.get_all_text()
+    assert text == ""
+
+
+def test_text_handler_add_memory():
+    """Test TextMemoryHandler add_memory method."""
+    from unittest.mock import Mock, patch
+
+    # Mock the tokenizer to avoid network calls
+    mock_tokenizer = Mock()
+    mock_tokenizer.encode.return_value = list(range(50))  # Simulate 50 tokens
+
+    with patch(
+        "src.memory.memory_agent.text_agent.AutoTokenizer.from_pretrained",
+        return_value=mock_tokenizer,
+    ):
+        handler = TextMemoryHandler(
+            model_id="test-model",
+            openai_config={"api_key": "test"},
+            clean_cache_first=True,
+        )
+
+        # Add memory
+        handler.add_memory("Test memory content")
+
+        # Verify memory was added
+        assert handler.add_handler.active_memory_agent is not None
+        assert len(handler.add_handler.active_memory_agent.current_block.chunks) > 0
+
+    # Cleanup
+    clear_text_cache()

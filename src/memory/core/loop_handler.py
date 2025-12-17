@@ -171,34 +171,60 @@ class QueryHandler:
         
 
 class MemoryHandler:
-    def __init__(self,model_id: str, clean_cache_first:bool=True,
-                 openai_config: dict = None,
-                 model_context_window: int =32768, 
-                 attn_implementation: str = "sdpa",
-                   device_map: str = "auto", 
-                   router_system_prompt: str = None,
-                   quantization_config=None,
-                   max_memory=None,
-                   offload_folder=None,
-                   overlap_ratio: float = 0.1,
-                   overlap_mode: str = "chunk",
-                   block_size_ratio: float= 0.125):
-        logger.info(f"Initializing MemoryHandler with model: {model_id}, overlap_ratio: {overlap_ratio}")
+    def __init__(
+        self,
+        model_id: str,
+        clean_cache_first: bool = True,
+        openai_config: dict = None,
+        model_context_window: int = 32768,
+        attn_implementation: str = "sdpa",
+        device_map: str = "auto",
+        router_system_prompt: str = None,
+        quantization_config=None,
+        max_memory=None,
+        offload_folder=None,
+        overlap_ratio: float = 0.1,
+        overlap_mode: str = "chunk",
+        block_size_ratio: float = 0.125,
+        max_memory_segments: int = None,
+        max_blocks: int = 5,
+    ):
+        logger.info(
+            f"Initializing MemoryHandler with model: {model_id}, overlap_ratio: {overlap_ratio}"
+        )
         self.model_id = model_id
         self.model_context_window = model_context_window
         self.attn_implementation = attn_implementation
-        self.block_size_ratio=block_size_ratio
+        self.block_size_ratio = block_size_ratio
         self.device_map = device_map
         self.quantization_config = quantization_config
         self.max_memory = max_memory
         self.offload_folder = offload_folder
-        
-        self.add_handler=AddHandler(model_id,model_context_window,attn_implementation,device_map,quantization_config,max_memory,offload_folder,overlap_ratio,overlap_mode,block_size_ratio)
+
+        self.add_handler = AddHandler(
+            model_id,
+            model_context_window,
+            attn_implementation,
+            device_map,
+            quantization_config,
+            max_memory,
+            offload_folder,
+            overlap_ratio,
+            overlap_mode,
+            block_size_ratio,
+        )
         self.inactive_memory_agents = []
-        if router_system_prompt is None:
-            self.query_handler=QueryHandler(Router(openai_config=openai_config))
-        else:
-            self.query_handler=QueryHandler(Router(openai_config=openai_config,system_prompt=router_system_prompt))
+
+        # Create router with memory segment and block limits
+        router_kwargs = {
+            "openai_config": openai_config,
+            "max_memory_segments": max_memory_segments,
+            "max_blocks": max_blocks,
+        }
+        if router_system_prompt is not None:
+            router_kwargs["system_prompt"] = router_system_prompt
+
+        self.query_handler = QueryHandler(Router(**router_kwargs))
         
         if clean_cache_first:
             logger.info("Clearing KV cache and metadata")
