@@ -19,6 +19,18 @@ def create_mock_model():
     return mock_model
 
 
+def create_mock_tokenizer():
+    """Helper to create properly configured mock tokenizer."""
+    mock_tokenizer = Mock()
+    mock_tokenizer.apply_chat_template.return_value = (
+        "<|im_start|>system\nTest<|im_end|>\n<|im_start|>user\nTEST<|im_end|>\n"
+    )
+    mock_tokenizer.encode.return_value = torch.tensor([[1, 2, 3, 4, 5]])
+    mock_tokenizer.decode.return_value = "Test response"
+    mock_tokenizer.eos_token_id = 0
+    return mock_tokenizer
+
+
 class TestMemoryAgent:
     """Test MemoryAgent functionality."""
     

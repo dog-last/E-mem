@@ -68,6 +68,27 @@ class MemoryConfig(BaseModel):
     max_blocks: int = Field(
         default=5, ge=1, description="Maximum number of memory blocks for router"
     )
+    # Resource control parameters for different hardware configurations
+    query_batch_size: int = Field(
+        default=4,
+        ge=1,
+        le=16,
+        description="Number of queries to batch together for inference. "
+        "Higher values improve throughput but require more GPU memory. "
+        "Set to 2 for single GPU with limited memory, 4-8 for multi-GPU setups.",
+    )
+    max_parallel_cache_loads: int = Field(
+        default=8,
+        ge=1,
+        le=32,
+        description="Maximum number of KV caches to load to GPU in parallel. "
+        "Adjust based on available GPU memory.",
+    )
+    kv_cache_on_gpu: bool = Field(
+        default=False,
+        description="Keep inactive KV caches on GPU for faster queries. "
+        "Only enable if you have sufficient GPU memory (e.g., multiple A100s).",
+    )
 
     @field_validator("overlap_ratio")
     @classmethod

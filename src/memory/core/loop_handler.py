@@ -2,7 +2,10 @@ import atexit
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
-from typing import List
+from typing import Any, Dict, List, Optional
+
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from src.memory.kv_block_manager.block import clear_cache as clear_kv_cache
 from src.memory.kv_block_manager.metadata import (
@@ -17,40 +20,135 @@ logger = logging.getLogger(__name__)
 
 
 class AddHandler:
-    def __init__(self,model_id: str, 
-                 model_context_window: int =32768, 
-                 attn_implementation: str = "sdpa",
-                   device_map: str = "auto", 
-                   quantization_config=None,
-                   max_memory=None,
-                   offload_folder=None,
-                   overlap_ratio: float = 0.1,
-                   overlap_mode: str = "chunk",
-                   block_size_ratio: float=0.125):
-        self.model_id=model_id
-        self.model_context_window=model_context_window
-        self.attn_implementation=attn_implementation
-        self.device_map=device_map
-        self.quantization_config=quantization_config
-        self.block_size_ratio=block_size_ratio
-        self.max_memory=max_memory
-        self.offload_folder=offload_folder
-        self.overlap_ratio=overlap_ratio
-        self.overlap_mode=overlap_mode  # "chunk" or "token"
-        self.active_memory_agent=None
-        self.overlap_buffer=[]  # Store recent memories for overlap
+    """
+    Handles adding memories to the active memory agent.
     
-    def create_agent(self):
-        logger.info("Creating new memory agent")
-        self.active_memory_agent=MemoryAgent(model_id=self.model_id,
-                                             model_context_window=self.model_context_window,
-                                             attn_implementation=self.attn_implementation,
-                                             device_map=self.device_map,
-                                             quantization_config=self.quantization_config,
-                                             max_memory=self.max_memory,
-                                             offload_folder=self.offload_folder,
-                                             block_size_ratio=self.block_size_ratio)
-        logger.debug(f"Memory agent created with model: {self.model_id}")
+    Manages the shared model instance and creates agents that share it,
+    significantly reducing GPU memory usage when multiple blocks are needed.
+    """
+    
+    def __init__(
+        self,
+        model_id: str,
+        model_context_window: int = 32768,
+        attn_implementation: str = "sdpa",
+        device_map: str = "auto",
+        quantization_config: Optional[Dict[str, Any]] = None,
+        max_memory: Optional[Dict[str, str]] = None,
+        offload_folder: Optional[str] = None,
+        overlap_ratio: float = 0.1,
+        overlap_mode: str = "chunk",
+        block_size_ratio: float = 0.125,
+    ):
+        self.model_id = model_id
+        self.model_context_window = model_context_window
+        self.attn_implementation = attn_implementation
+        self.device_map = device_map
+        self.quantization_config = quantization_config
+        self.block_size_ratio = block_size_ratio
+        self.max_memory = max_memory
+        self.offload_folder = offload_folder
+        self.overlap_ratio = overlap_ratio
+        self.overlap_mode = overlap_mode  # "chunk" or "token"
+        self.active_memory_agent: Optional[MemoryAgent] = None
+        self.overlap_buffer: List[str] = []  # Store recent memories for overlap
+        
+        # Initialize shared model and tokenizer
+        self._shared_model = None
+        self._shared_tokenizer = None
+        self._shared_layer_devices = None
+        self._load_shared_model()
+    
+    def _load_shared_model(self) -> None:
+        """Load the shared model and tokenizer once."""
+        logger.info(f"Loading shared model: {self.model_id}")
+        
+        self._shared_tokenizer = AutoTokenizer.from_pretrained(
+            self.model_id, trust_remote_code=True
+        )
+        logger.debug(f"Shared tokenizer loaded for {self.model_id}")
+        
+        model_kwargs: Dict[str, Any] = {
+            "device_map": self.device_map,
+            "attn_implementation": self.attn_implementation,
+            "trust_remote_code": True,
+        }
+        if self.quantization_config is not None:
+            model_kwargs["quantization_config"] = self.quantization_config
+        else:
+            model_kwargs["dtype"] = torch.bfloat16
+        
+        if self.max_memory is not None:
+            model_kwargs["max_memory"] = self.max_memory
+        if self.offload_folder is not None:
+            model_kwargs["offload_folder"] = self.offload_folder
+        
+        self._shared_model = AutoModelForCausalLM.from_pretrained(
+            self.model_id, **model_kwargs
+        )
+        logger.info(f"Shared model loaded successfully: {self.model_id}")
+        
+        # Compute layer devices mapping once
+        self._shared_layer_devices = self._get_layer_devices()
+        logger.info(f"Layer devices mapped: {len(self._shared_layer_devices)} layers across devices")
+    
+    def _get_layer_devices(self) -> Dict[int, torch.device]:
+        """Get accurate device mapping for each layer."""
+        num_layers = len(self._shared_model.model.layers)
+        layer_devices: Dict[int, torch.device] = {}
+        
+        # Use hf_device_map (ground truth for device_map='auto')
+        if hasattr(self._shared_model, 'hf_device_map'):
+            for key, device_index in self._shared_model.hf_device_map.items():
+                if 'model.layers.' in key:
+                    try:
+                        layer_idx = int(key.split('model.layers.')[1].split('.')[0])
+                        if isinstance(device_index, int):
+                            layer_devices[layer_idx] = torch.device(f'cuda:{device_index}')
+                        else:
+                            layer_devices[layer_idx] = torch.device(device_index)
+                    except (IndexError, ValueError):
+                        continue
+        
+        # Fallback for missing layers
+        for i in range(num_layers):
+            if i not in layer_devices:
+                try:
+                    dev = next(self._shared_model.model.layers[i].parameters()).device
+                    layer_devices[i] = torch.device('cuda:0') if dev.type == 'meta' else dev
+                except Exception as e:
+                    logger.error(f"Error mapping layer {i}: {e}")
+                    layer_devices[i] = torch.device('cuda:0')
+        
+        return layer_devices
+    
+    @property
+    def shared_model(self):
+        """Get the shared model instance."""
+        return self._shared_model
+    
+    @property
+    def shared_tokenizer(self):
+        """Get the shared tokenizer instance."""
+        return self._shared_tokenizer
+    
+    @property
+    def shared_layer_devices(self) -> Dict[int, torch.device]:
+        """Get the shared layer devices mapping."""
+        return self._shared_layer_devices
+    
+    def create_agent(self) -> None:
+        """Create a new memory agent using the shared model."""
+        logger.info("Creating new memory agent with shared model")
+        self.active_memory_agent = MemoryAgent(
+            model_id=self.model_id,
+            model_context_window=self.model_context_window,
+            block_size_ratio=self.block_size_ratio,
+            shared_model=self._shared_model,
+            shared_tokenizer=self._shared_tokenizer,
+            shared_layer_devices=self._shared_layer_devices,
+        )
+        logger.debug(f"Memory agent created with shared model: {self.model_id}")
 
     def add_memory(self, text: str) -> bool:
         """
@@ -171,24 +269,56 @@ class QueryHandler:
         
 
 class MemoryHandler:
+    """
+    Main handler for memory operations using KV cache storage.
+    
+    Manages a shared model instance across all memory agents to minimize
+    GPU memory usage. Supports both single-GPU and multi-GPU configurations.
+    """
+    
     def __init__(
         self,
         model_id: str,
         clean_cache_first: bool = True,
-        openai_config: dict = None,
+        openai_config: Optional[Dict[str, Any]] = None,
         model_context_window: int = 32768,
         attn_implementation: str = "sdpa",
         device_map: str = "auto",
-        router_system_prompt: str = None,
-        quantization_config=None,
-        max_memory=None,
-        offload_folder=None,
+        router_system_prompt: Optional[str] = None,
+        quantization_config: Optional[Dict[str, Any]] = None,
+        max_memory: Optional[Dict[str, str]] = None,
+        offload_folder: Optional[str] = None,
         overlap_ratio: float = 0.1,
         overlap_mode: str = "chunk",
         block_size_ratio: float = 0.125,
-        max_memory_segments: int = None,
+        max_memory_segments: Optional[int] = None,
         max_blocks: int = 5,
+        # Resource control parameters for batch inference
+        query_batch_size: int = 4,
+        max_parallel_cache_loads: int = 8,
     ):
+        """
+        Initialize MemoryHandler.
+        
+        Args:
+            model_id: HuggingFace model ID or local path.
+            clean_cache_first: Whether to clear existing cache on init.
+            openai_config: OpenAI API config for router.
+            model_context_window: Model's context window size.
+            attn_implementation: Attention implementation type.
+            device_map: Device mapping strategy.
+            router_system_prompt: Custom router system prompt.
+            quantization_config: Model quantization config.
+            max_memory: Max memory per GPU device.
+            offload_folder: Folder for offloading weights.
+            overlap_ratio: Overlap ratio between blocks.
+            overlap_mode: Overlap handling strategy.
+            block_size_ratio: Block size relative to context window.
+            max_memory_segments: Max memory segments per query.
+            max_blocks: Max blocks to query.
+            query_batch_size: Queries to batch together.
+            max_parallel_cache_loads: Max parallel KV cache loads.
+        """
         logger.info(
             f"Initializing MemoryHandler with model: {model_id}, overlap_ratio: {overlap_ratio}"
         )
@@ -201,25 +331,28 @@ class MemoryHandler:
         self.max_memory = max_memory
         self.offload_folder = offload_folder
 
+        # Create AddHandler which manages the shared model
         self.add_handler = AddHandler(
-            model_id,
-            model_context_window,
-            attn_implementation,
-            device_map,
-            quantization_config,
-            max_memory,
-            offload_folder,
-            overlap_ratio,
-            overlap_mode,
-            block_size_ratio,
+            model_id=model_id,
+            model_context_window=model_context_window,
+            attn_implementation=attn_implementation,
+            device_map=device_map,
+            quantization_config=quantization_config,
+            max_memory=max_memory,
+            offload_folder=offload_folder,
+            overlap_ratio=overlap_ratio,
+            overlap_mode=overlap_mode,
+            block_size_ratio=block_size_ratio,
         )
-        self.inactive_memory_agents = []
+        self.inactive_memory_agents: List[MemoryAgent] = []
 
         # Create router with memory segment and block limits
-        router_kwargs = {
+        router_kwargs: Dict[str, Any] = {
             "openai_config": openai_config,
             "max_memory_segments": max_memory_segments,
             "max_blocks": max_blocks,
+            "max_parallel_cache_loads": max_parallel_cache_loads,
+            "query_batch_size": query_batch_size,
         }
         if router_system_prompt is not None:
             router_kwargs["system_prompt"] = router_system_prompt
@@ -398,8 +531,8 @@ class MemoryHandler:
         save_agents_metadata(final_metadata)
         logger.info(f"Saved metadata: {len(current_session_metadata)} for current session ({self.model_id}, {session_id}), {len(other_sessions_metadata)} for other sessions, total {len(final_metadata)}")
     
-    def _load_existing_agents(self):
-        """Load existing agents from metadata."""
+    def _load_existing_agents(self) -> None:
+        """Load existing agents from metadata using shared model."""
         metadata = load_agents_metadata()
         if not metadata:
             logger.info("No existing agents found")
@@ -419,19 +552,23 @@ class MemoryHandler:
         else:
             logger.info(f"Loading {len(current_session_metadata)} agents for session {session_id}")
         
+        # Get shared model resources from AddHandler
+        shared_model = self.add_handler.shared_model
+        shared_tokenizer = self.add_handler.shared_tokenizer
+        shared_layer_devices = self.add_handler.shared_layer_devices
+        
         for agent_data in current_session_metadata:
-            # Recreate agent
+            # Recreate agent using shared model
             agent = MemoryAgent(
                 model_id=self.model_id,
                 model_context_window=self.model_context_window,
-                attn_implementation=self.attn_implementation,
-                device_map=self.device_map,
-                quantization_config=self.quantization_config,
-                max_memory=self.max_memory,
-                offload_folder=self.offload_folder,
                 load_from_block_id=agent_data["block_id"],
                 load_timestamp=agent_data["timestamp"],
-                block_size_ratio=agent_data["block_size_ratio"]
+                block_size_ratio=agent_data["block_size_ratio"],
+                # Use shared model
+                shared_model=shared_model,
+                shared_tokenizer=shared_tokenizer,
+                shared_layer_devices=shared_layer_devices,
             )
             
             # Restore summary and block_used

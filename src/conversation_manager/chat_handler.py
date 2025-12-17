@@ -16,7 +16,7 @@ class ChatManager(BaseChatManager):
     Chat manager using KV cache for memory storage.
 
     This implementation uses GPU-based KV cache for efficient memory storage
-    and retrieval. Requires a GPU with sufficient VRAM.
+    and retrieval. Uses a shared model architecture to minimize GPU memory usage.
 
     Args:
         model_id: HuggingFace model ID or local path.
@@ -35,6 +35,8 @@ class ChatManager(BaseChatManager):
         block_size_ratio: Block size relative to context window (0.0-1.0).
         max_memory_segments: Maximum memory segments to return per block query.
         max_blocks: Maximum number of memory blocks to select by router.
+        query_batch_size: Queries to batch together for inference.
+        max_parallel_cache_loads: Maximum parallel KV cache loads to GPU.
     """
 
     def __init__(
@@ -55,6 +57,8 @@ class ChatManager(BaseChatManager):
         block_size_ratio: float = 0.125,
         max_memory_segments: Optional[int] = None,
         max_blocks: int = 5,
+        query_batch_size: int = 4,
+        max_parallel_cache_loads: int = 8,
     ) -> None:
         super().__init__(openai_config, system_prompt)
         self._name = "chat_manager"
@@ -78,6 +82,8 @@ class ChatManager(BaseChatManager):
             "block_size_ratio": block_size_ratio,
             "max_memory_segments": max_memory_segments,
             "max_blocks": max_blocks,
+            "query_batch_size": query_batch_size,
+            "max_parallel_cache_loads": max_parallel_cache_loads,
         }
 
         if router_system_prompt is not None:

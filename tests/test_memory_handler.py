@@ -1,14 +1,48 @@
 """Tests for MemoryHandler."""
 from unittest.mock import Mock, patch
 
+import torch
+
 from src.memory.core.loop_handler import AddHandler, MemoryHandler, QueryHandler
+
+
+def create_mock_model():
+    """Helper to create properly configured mock model."""
+    mock_model = Mock()
+    mock_model.device = torch.device("cpu")
+    mock_layers = [Mock() for _ in range(4)]
+    for layer in mock_layers:
+        layer.parameters.return_value = iter([torch.tensor([1.0])])
+    mock_model.model.layers = mock_layers
+    # Remove hf_device_map to simulate non-auto device mapping
+    if hasattr(mock_model, 'hf_device_map'):
+        del mock_model.hf_device_map
+    return mock_model
+
+
+def create_mock_tokenizer():
+    """Helper to create properly configured mock tokenizer."""
+    mock_tokenizer = Mock()
+    mock_tokenizer.apply_chat_template.return_value = (
+        "<|im_start|>system\nTest<|im_end|>\n<|im_start|>user\nTEST<|im_end|>\n"
+    )
+    mock_tokenizer.encode.return_value = torch.tensor([[1, 2, 3, 4, 5]])
+    mock_tokenizer.decode.return_value = "Test response"
+    mock_tokenizer.eos_token_id = 0
+    mock_tokenizer.pad_token_id = 0
+    return mock_tokenizer
 
 
 class TestAddHandler:
     """Test AddHandler functionality."""
     
-    def test_init(self):
+    @patch("src.memory.core.loop_handler.AutoModelForCausalLM")
+    @patch("src.memory.core.loop_handler.AutoTokenizer")
+    def test_init(self, mock_tokenizer_class, mock_model_class):
         """Test AddHandler initialization."""
+        mock_tokenizer_class.from_pretrained.return_value = create_mock_tokenizer()
+        mock_model_class.from_pretrained.return_value = create_mock_model()
+        
         handler = AddHandler(
             model_id="test-model",
             model_context_window=32768,
@@ -18,19 +52,35 @@ class TestAddHandler:
         
         assert handler.model_id == "test-model"
         assert handler.active_memory_agent is None
+        assert handler._shared_model is not None
+        assert handler._shared_tokenizer is not None
     
+    @patch("src.memory.core.loop_handler.AutoModelForCausalLM")
+    @patch("src.memory.core.loop_handler.AutoTokenizer")
     @patch("src.memory.core.loop_handler.MemoryAgent")
-    def test_create_agent(self, mock_agent_class):
+    def test_create_agent(self, mock_agent_class, mock_tokenizer_class, mock_model_class):
         """Test creating agent."""
+        mock_tokenizer_class.from_pretrained.return_value = create_mock_tokenizer()
+        mock_model_class.from_pretrained.return_value = create_mock_model()
+        
         handler = AddHandler(model_id="test-model")
         handler.create_agent()
         
         assert handler.active_memory_agent is not None
         mock_agent_class.assert_called_once()
+        # Verify shared model is passed
+        call_kwargs = mock_agent_class.call_args.kwargs
+        assert "shared_model" in call_kwargs
+        assert "shared_tokenizer" in call_kwargs
     
+    @patch("src.memory.core.loop_handler.AutoModelForCausalLM")
+    @patch("src.memory.core.loop_handler.AutoTokenizer")
     @patch("src.memory.core.loop_handler.MemoryAgent")
-    def test_add_memory(self, mock_agent_class):
+    def test_add_memory(self, mock_agent_class, mock_tokenizer_class, mock_model_class):
         """Test adding memory."""
+        mock_tokenizer_class.from_pretrained.return_value = create_mock_tokenizer()
+        mock_model_class.from_pretrained.return_value = create_mock_model()
+        
         mock_agent = Mock()
         mock_agent.is_active = True
         mock_agent.block_size = 1000
@@ -42,11 +92,17 @@ class TestAddHandler:
         assert is_active
         mock_agent.add.assert_called_once_with(["Test memory"])
     
+    @patch("src.memory.core.loop_handler.AutoModelForCausalLM")
+    @patch("src.memory.core.loop_handler.AutoTokenizer")
     @patch("src.memory.core.loop_handler.MemoryAgent")
-    def test_query_new_agent(self, mock_agent_class):
+    def test_query_new_agent(self, mock_agent_class, mock_tokenizer_class, mock_model_class):
         """Test querying new agent."""
+        mock_tokenizer_class.from_pretrained.return_value = create_mock_tokenizer()
+        mock_model_class.from_pretrained.return_value = create_mock_model()
+        
         mock_agent = Mock()
         mock_agent.query.return_value = "Test response"
+        mock_agent.saved_chunks = [{"start": 0, "length": 10}]
         mock_agent_class.return_value = mock_agent
         
         handler = AddHandler(model_id="test-model")
@@ -56,16 +112,26 @@ class TestAddHandler:
         assert result == "Test response"
         mock_agent.query.assert_called_once_with("Test query")
     
-    def test_query_no_agent(self):
+    @patch("src.memory.core.loop_handler.AutoModelForCausalLM")
+    @patch("src.memory.core.loop_handler.AutoTokenizer")
+    def test_query_no_agent(self, mock_tokenizer_class, mock_model_class):
         """Test querying when no agent exists."""
+        mock_tokenizer_class.from_pretrained.return_value = create_mock_tokenizer()
+        mock_model_class.from_pretrained.return_value = create_mock_model()
+        
         handler = AddHandler(model_id="test-model")
         result = handler.query_new_agent("Test query")
         
         assert result == "No active memory."
     
+    @patch("src.memory.core.loop_handler.AutoModelForCausalLM")
+    @patch("src.memory.core.loop_handler.AutoTokenizer")
     @patch("src.memory.core.loop_handler.MemoryAgent")
-    def test_overlap_mode_chunk(self, mock_agent_class):
+    def test_overlap_mode_chunk(self, mock_agent_class, mock_tokenizer_class, mock_model_class):
         """Test chunk mode overlap handling."""
+        mock_tokenizer_class.from_pretrained.return_value = create_mock_tokenizer()
+        mock_model_class.from_pretrained.return_value = create_mock_model()
+        
         mock_agent = Mock()
         mock_agent.is_active = True
         mock_agent.block_size = 1000
@@ -88,9 +154,14 @@ class TestAddHandler:
         # All items should be complete chunks
         assert all(isinstance(mem, str) for mem in overlap_memories)
     
+    @patch("src.memory.core.loop_handler.AutoModelForCausalLM")
+    @patch("src.memory.core.loop_handler.AutoTokenizer")
     @patch("src.memory.core.loop_handler.MemoryAgent")
-    def test_overlap_mode_token(self, mock_agent_class):
+    def test_overlap_mode_token(self, mock_agent_class, mock_tokenizer_class, mock_model_class):
         """Test token mode overlap handling."""
+        mock_tokenizer_class.from_pretrained.return_value = create_mock_tokenizer()
+        mock_model_class.from_pretrained.return_value = create_mock_model()
+        
         mock_agent = Mock()
         mock_agent.is_active = True
         mock_agent.block_size = 1000
@@ -112,9 +183,13 @@ class TestAddHandler:
         # Items should be sentences (may be split)
         assert all(isinstance(mem, str) for mem in overlap_memories)
     
-    @patch("src.memory.core.loop_handler.MemoryAgent")
-    def test_overlap_mode_initialization(self, mock_agent_class):
+    @patch("src.memory.core.loop_handler.AutoModelForCausalLM")
+    @patch("src.memory.core.loop_handler.AutoTokenizer")
+    def test_overlap_mode_initialization(self, mock_tokenizer_class, mock_model_class):
         """Test that overlap_mode is correctly initialized."""
+        mock_tokenizer_class.from_pretrained.return_value = create_mock_tokenizer()
+        mock_model_class.from_pretrained.return_value = create_mock_model()
+        
         handler_chunk = AddHandler(
             model_id="test-model",
             overlap_mode="chunk"
@@ -130,9 +205,14 @@ class TestAddHandler:
         handler_default = AddHandler(model_id="test-model")
         assert handler_default.overlap_mode == "chunk"  # Default should be chunk
     
+    @patch("src.memory.core.loop_handler.AutoModelForCausalLM")
+    @patch("src.memory.core.loop_handler.AutoTokenizer")
     @patch("src.memory.core.loop_handler.MemoryAgent")
-    def test_get_overlap_memories_returns_copy(self, mock_agent_class):
+    def test_get_overlap_memories_returns_copy(self, mock_agent_class, mock_tokenizer_class, mock_model_class):
         """Test that get_overlap_memories returns a copy, not a reference."""
+        mock_tokenizer_class.from_pretrained.return_value = create_mock_tokenizer()
+        mock_model_class.from_pretrained.return_value = create_mock_model()
+        
         mock_agent = Mock()
         mock_agent.is_active = True
         mock_agent.block_size = 1000
@@ -153,9 +233,14 @@ class TestAddHandler:
         # But should have same content
         assert overlap1 == overlap2
     
+    @patch("src.memory.core.loop_handler.AutoModelForCausalLM")
+    @patch("src.memory.core.loop_handler.AutoTokenizer")
     @patch("src.memory.core.loop_handler.MemoryAgent")
-    def test_clear_overlap_buffer(self, mock_agent_class):
+    def test_clear_overlap_buffer(self, mock_agent_class, mock_tokenizer_class, mock_model_class):
         """Test clearing overlap buffer."""
+        mock_tokenizer_class.from_pretrained.return_value = create_mock_tokenizer()
+        mock_model_class.from_pretrained.return_value = create_mock_model()
+        
         mock_agent = Mock()
         mock_agent.is_active = True
         mock_agent.block_size = 1000
@@ -424,15 +509,13 @@ class TestMemoryHandler:
         )
         
         # Verify AddHandler was called with overlap_mode
-        # AddHandler is called with positional args: (model_id, model_context_window, attn_implementation, 
-        # device_map, quantization_config, max_memory, offload_folder, overlap_ratio, overlap_mode)
         assert mock_add_handler_class.called, "AddHandler should have been called"
         call_args = mock_add_handler_class.call_args
         assert call_args is not None, "AddHandler should have been called with arguments"
-        # call_args is a tuple of (args, kwargs), so call_args[0] is the args tuple
-        args = call_args[0]
-        assert len(args) >= 9, f"AddHandler should be called with at least 9 positional arguments, got {len(args)}"
-        assert args[8] == "token", f"overlap_mode should be 'token', got {args[8]}"
+        # AddHandler is now called with keyword arguments
+        kwargs = call_args.kwargs
+        assert "overlap_mode" in kwargs, f"overlap_mode should be in kwargs: {kwargs}"
+        assert kwargs["overlap_mode"] == "token", f"overlap_mode should be 'token', got {kwargs.get('overlap_mode')}"
 
     @patch("src.memory.core.loop_handler.save_agents_metadata")
     @patch("src.memory.core.loop_handler.load_agents_metadata")

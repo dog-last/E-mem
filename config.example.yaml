@@ -25,6 +25,15 @@ memory:
   max_concurrent_gpu_operations: 2  # Number of concurrent GPU operations for parallel queries
   max_memory_segments: 5  # Maximum number of memory segments to return in query response
   max_blocks: 5  # Maximum number of memory blocks to select by the router
+  
+  # Resource control for different hardware configurations
+  # Adjust these based on your GPU memory:
+  # - Single GPU (24GB): query_batch_size=1-2, max_parallel_cache_loads=2
+  # - Multi-GPU (4x24GB): query_batch_size=4-8, max_parallel_cache_loads=8
+  # - High-end (8xA100): query_batch_size=8-16, max_parallel_cache_loads=16
+  query_batch_size: 2  # Number of queries to batch together for true GPU parallelism
+  max_parallel_cache_loads: 4  # Maximum parallel KV cache loads to GPU
+  kv_cache_on_gpu: false  # Keep inactive KV caches on GPU (only for high-memory setups)
 
 # LoComo Evaluation settings
 locomo_eval:

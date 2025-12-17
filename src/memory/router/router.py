@@ -1,31 +1,70 @@
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+
+import torch
+from transformers import DynamicCache
 
 from src.agent.base import BaseAgent
+from src.memory.memory_agent.agent import (
+    BatchQueryInputs,
+    batch_generate,
+    pad_kv_cache_for_batch,
+)
 from src.utils.parser import limit_memory_segments
 from src.utils.prompt import ROUTER_SYS_PROMPT
+
+if TYPE_CHECKING:
+    from src.memory.memory_agent.agent import MemoryAgent
 
 logger = logging.getLogger(__name__)
 
 
 class Router(BaseAgent):
+    """
+    Router that selects and queries relevant memory blocks.
+    
+    Supports both shared model mode (sequential queries with single model)
+    and standalone mode (parallel queries with multiple models).
+    
+    In shared model mode, queries are executed sequentially to avoid
+    conflicts, but KV cache loading is still parallelized for I/O efficiency.
+    """
+    
     def __init__(
         self,
-        openai_config: dict = None,
+        openai_config: Optional[Dict[str, Any]] = None,
         system_prompt: str = ROUTER_SYS_PROMPT,
         max_memory_segments: Optional[int] = None,
         max_blocks: int = 5,
+        max_parallel_cache_loads: int = 8,
+        query_batch_size: int = 4,
     ) -> None:
+        """
+        Initialize Router.
+        
+        Args:
+            openai_config: OpenAI API configuration for routing decisions.
+            system_prompt: System prompt for routing.
+            max_memory_segments: Maximum memory segments per query result.
+            max_blocks: Maximum blocks to query.
+            max_parallel_cache_loads: Max parallel KV cache loads to GPU.
+            query_batch_size: Queries to batch together (for future batch inference).
+        """
         if not openai_config:
             raise NotImplementedError("Please provide openai_config for router.")
         super().__init__(openai_config, system_prompt)
         self.name = "router"
-        self.agent = []
+        self.agent: List[Any] = []
         self.max_memory_segments = max_memory_segments
         self.max_blocks = max_blocks
-        logger.info(f"Router initialized (max_memory_segments={max_memory_segments}, max_blocks={max_blocks})")
+        self.max_parallel_cache_loads = max_parallel_cache_loads
+        self.query_batch_size = query_batch_size
+        logger.info(
+            f"Router initialized (max_memory_segments={max_memory_segments}, "
+            f"max_blocks={max_blocks}, max_parallel_cache_loads={max_parallel_cache_loads})"
+        )
 
     def add_blocks(self, memory_agent):
         """Add inactive memory agent to router for querying."""
@@ -125,47 +164,277 @@ class Router(BaseAgent):
     def map_reduce_blocks(self, user_query: str) -> List[str]:
         """
         Collect all the responses from the relevant memory agents.
-
+        
+        Supports two modes:
+        1. Batch inference mode (shared model): True GPU parallelism via batching
+        2. Standalone mode: Parallel queries with separate models
+        
         Args:
-            user_query (str): The user query.
-
+            user_query: The user query.
+            
         Returns:
-            list: A list of responses.
+            List of responses from relevant memory blocks.
         """
         relevant_agents_list = self._map_blocks(user_query)
         if not relevant_agents_list:
             logger.debug("No relevant agents found for query")
             return []
+        
+        num_agents = len(relevant_agents_list)
+        logger.info(f"Processing {num_agents} relevant memory blocks")
 
-        # Pre-load all caches in parallel (disk I/O only, no GPU)
-        logger.debug(
-            f"Pre-loading {len(relevant_agents_list)} caches from disk in parallel"
-        )
-        with ThreadPoolExecutor(max_workers=len(relevant_agents_list)) as executor:
+        # Step 1: Pre-load all caches to CPU in parallel (I/O bound)
+        preload_workers = min(num_agents, self.max_parallel_cache_loads)
+        logger.debug(f"Pre-loading {num_agents} caches with {preload_workers} workers")
+        
+        with ThreadPoolExecutor(max_workers=preload_workers) as executor:
             list(executor.map(lambda agent: agent.preload_cache(), relevant_agents_list))
-
-        # Now query in parallel (GPU operations limited by semaphore)
-        logger.debug(
-            f"Querying {len(relevant_agents_list)} relevant memory blocks in parallel"
+        
+        # Step 2: Check if using shared model mode
+        agents_share_model = (
+            len(relevant_agents_list) > 0 
+            and hasattr(relevant_agents_list[0], '_owns_model')
+            and not relevant_agents_list[0]._owns_model
         )
-        with ThreadPoolExecutor(max_workers=len(relevant_agents_list)) as executor:
-            results = list(
-                executor.map(lambda agent: agent.query(user_query), relevant_agents_list)
-            )
+        
+        results: List[str] = []
+        
+        if agents_share_model and self.query_batch_size > 1:
+            # True batch inference mode
+            logger.info(f"Using batch inference with batch_size={self.query_batch_size}")
+            results = self._batch_query_agents(relevant_agents_list, user_query)
+        elif agents_share_model:
+            # Shared model but batch_size=1: sequential with single model
+            logger.debug("Shared model mode, batch_size=1, executing sequentially")
+            results = self._sequential_query_agents(relevant_agents_list, user_query)
+        else:
+            # Standalone mode: parallel queries (each agent has own model)
+            logger.debug("Standalone model mode, executing queries in parallel")
+            with ThreadPoolExecutor(max_workers=num_agents) as executor:
+                results = list(
+                    executor.map(lambda agent: agent.query(user_query), relevant_agents_list)
+                )
 
-        # Apply memory segment limit if configured
+        # Step 3: Apply memory segment limit if configured
         if self.max_memory_segments is not None and self.max_memory_segments > 0:
-            logger.debug(
-                f"Applying memory segment limit: max_memory_segments={self.max_memory_segments}"
-            )
+            logger.debug(f"Applying memory segment limit: {self.max_memory_segments}")
             results = [
                 limit_memory_segments(result, self.max_memory_segments)
                 for result in results
             ]
 
-        # Force cleanup after parallel queries
-        import torch
-
+        # Final cleanup
         torch.cuda.empty_cache()
         logger.info(f"Collected {len(results)} results from memory blocks")
+        return results
+    
+    def _sequential_query_agents(
+        self, agents: List["MemoryAgent"], user_query: str
+    ) -> List[str]:
+        """Execute queries sequentially (for shared model with batch_size=1)."""
+        results: List[str] = []
+        for i, agent in enumerate(agents):
+            try:
+                logger.debug(f"Querying agent {i+1}/{len(agents)}")
+                result = agent.query(user_query)
+                results.append(result)
+            except Exception as e:
+                logger.error(f"Error querying agent {i}: {e}", exc_info=True)
+                results.append(f"[ERROR] Query failed: {e}")
+            torch.cuda.empty_cache()
+        return results
+    
+    def _batch_query_agents(
+        self, agents: List["MemoryAgent"], user_query: str
+    ) -> List[str]:
+        """
+        Execute queries using true batch inference.
+        
+        This provides real GPU parallelism by batching multiple queries together.
+        """
+        num_agents = len(agents)
+        all_results: List[str] = [""] * num_agents
+        
+        # Process in batches
+        for batch_start in range(0, num_agents, self.query_batch_size):
+            batch_end = min(batch_start + self.query_batch_size, num_agents)
+            batch_agents = agents[batch_start:batch_end]
+            batch_indices = list(range(batch_start, batch_end))
+            
+            logger.debug(
+                f"Processing batch {batch_start//self.query_batch_size + 1}: "
+                f"agents {batch_start}-{batch_end-1}"
+            )
+            
+            try:
+                batch_results = self._execute_batch_query(batch_agents, user_query)
+                for i, result in zip(batch_indices, batch_results):
+                    all_results[i] = result
+            except Exception as e:
+                logger.error(f"Batch query failed: {e}", exc_info=True)
+                # Fallback to sequential for this batch
+                for i, agent in zip(batch_indices, batch_agents):
+                    try:
+                        all_results[i] = agent.query(user_query)
+                    except Exception as inner_e:
+                        all_results[i] = f"[ERROR] Query failed: {inner_e}"
+            
+            torch.cuda.empty_cache()
+        
+        return all_results
+    
+    def _execute_batch_query(
+        self, agents: List["MemoryAgent"], user_query: str
+    ) -> List[str]:
+        """
+        Execute a single batch of queries with true parallelism.
+        
+        Args:
+            agents: List of agents to query (batch)
+            user_query: The query string
+            
+        Returns:
+            List of responses
+        """
+        if not agents:
+            return []
+        
+        batch_size = len(agents)
+        
+        # Get shared model resources from first agent
+        model = agents[0].model
+        tokenizer = agents[0].tokenizer
+        layer_devices = agents[0].layer_devices
+        primary_device = agents[0].primary_device
+        
+        # Step 1: Get all caches and query inputs
+        caches: List[DynamicCache] = []
+        global_offsets: List[int] = []
+        query_inputs: List[Tuple[torch.Tensor, int]] = []
+        valid_indices: List[int] = []
+        
+        for i, agent in enumerate(agents):
+            cache_result = agent.get_cache_for_batch()
+            if cache_result is None:
+                logger.warning(f"Agent {i} has no cache available")
+                continue
+            
+            cache, global_offset, _ = cache_result
+            query_ids, query_len = agent.format_query_for_batch(user_query)
+            
+            caches.append(cache)
+            global_offsets.append(global_offset)
+            query_inputs.append((query_ids, query_len))
+            valid_indices.append(i)
+        
+        if not caches:
+            return ["No knowledge available."] * batch_size
+        
+        # Step 2: Pad and batch KV caches (LEFT-PADDED)
+        batched_cache, cache_lengths = pad_kv_cache_for_batch(
+            caches, layer_devices, primary_device
+        )
+        max_cache_len = max(cache_lengths) if cache_lengths else 0
+        
+        # Step 3: Pad and batch query inputs (LEFT-PADDED to match KV cache)
+        # CRITICAL: Both KV cache and input_ids must use LEFT-PADDING
+        # This ensures [:, -1] always gets the last real token's logits
+        max_query_len = max(q[1] for q in query_inputs)
+        first_layer_device = layer_devices.get(0, primary_device)
+        
+        # LEFT-PAD input_ids with padding token
+        pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id or 0
+        batched_input_ids = torch.full(
+            (len(valid_indices), max_query_len),
+            pad_token_id,
+            dtype=torch.long,
+            device=first_layer_device
+        )
+        
+        query_lengths: List[int] = []
+        query_pad_sizes: List[int] = []
+        for batch_idx, (query_ids, query_len) in enumerate(query_inputs):
+            query_lengths.append(query_len)
+            query_pad = max_query_len - query_len
+            query_pad_sizes.append(query_pad)
+            # LEFT-PAD: put content at the END
+            batched_input_ids[batch_idx, query_pad:] = query_ids.squeeze(0)
+        
+        # Step 4: Compute position_ids and attention_mask
+        # Layout for each sample:
+        # - Cache: [Pad, Pad, ..., CacheData]  (left-padded)
+        # - Query: [Pad, Pad, ..., QueryData]  (left-padded)
+        # - Position IDs: only for real query tokens, starting from global_offset
+        
+        # Position IDs for query tokens (LEFT-PADDED)
+        batched_position_ids = torch.zeros(
+            (len(valid_indices), max_query_len),
+            dtype=torch.long,
+            device=first_layer_device
+        )
+        
+        # Attention mask: [batch, max_cache_len + max_query_len]
+        total_len = max_cache_len + max_query_len
+        batched_attention_mask = torch.zeros(
+            (len(valid_indices), total_len),
+            dtype=torch.long,
+            device=first_layer_device
+        )
+        
+        for batch_idx in range(len(valid_indices)):
+            cache_len = cache_lengths[batch_idx]
+            query_len = query_lengths[batch_idx]
+            query_pad = query_pad_sizes[batch_idx]
+            global_offset = global_offsets[batch_idx]
+            
+            # Position IDs for query tokens (LEFT-PADDED)
+            # Real query tokens are at indices [query_pad:max_query_len]
+            # Their positions start from global_offset
+            for pos in range(query_len):
+                batched_position_ids[batch_idx, query_pad + pos] = global_offset + pos
+            
+            # Attention mask:
+            # - Cache part: mask out left-padding, allow real cache data
+            cache_padding = max_cache_len - cache_len
+            batched_attention_mask[batch_idx, cache_padding:max_cache_len] = 1
+            # - Query part: mask out left-padding, allow real query tokens
+            batched_attention_mask[batch_idx, max_cache_len + query_pad:total_len] = 1
+        
+        # Step 5: Create BatchQueryInputs
+        batch_inputs = BatchQueryInputs(
+            input_ids=batched_input_ids,
+            position_ids=batched_position_ids,
+            attention_mask=batched_attention_mask,
+            past_key_values=batched_cache,
+            cache_lengths=cache_lengths,
+            query_lengths=query_lengths,
+            global_offsets=global_offsets,
+        )
+        
+        # Step 6: Execute batch generation
+        logger.debug(f"Executing batch generation with {len(valid_indices)} samples")
+        batch_responses = batch_generate(
+            model=model,
+            tokenizer=tokenizer,
+            batch_inputs=batch_inputs,
+            max_new_tokens=8192,
+        )
+        
+        # Step 7: Clean thinking content from responses
+        cleaned_responses = []
+        for response in batch_responses:
+            cleaned = agents[0]._remove_thinking_content(response)
+            cleaned_responses.append(cleaned)
+        
+        # Step 8: Map back to original indices
+        results = ["No knowledge available."] * batch_size
+        for batch_idx, orig_idx in enumerate(valid_indices):
+            results[orig_idx] = cleaned_responses[batch_idx]
+        
+        # Cleanup caches
+        for cache in caches:
+            del cache
+        del batched_cache
+        torch.cuda.empty_cache()
+        
         return results

@@ -2,14 +2,18 @@ import logging
 import re
 import threading
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
-from typing import List
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 
 from src.memory.kv_block_manager.block import KVBlock
 from src.utils.prompt import MEMORY_AGENT_SYS_PROMPT, SUMMARY_INSTRUCTION
+
+if TYPE_CHECKING:
+    from transformers import PreTrainedModel, PreTrainedTokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -22,54 +26,331 @@ except (ImportError, AttributeError):
 
 # Semaphore to limit concurrent GPU operations
 _gpu_semaphore = threading.Semaphore(MAX_CONCURRENT_GPU_OPERATIONS)
+# Lock for thread-safe model access when using shared model
+_model_lock = threading.Lock()
+
+
+@dataclass
+class BatchQueryInputs:
+    """Container for batch query inputs."""
+    input_ids: torch.Tensor  # [batch, seq_len]
+    position_ids: torch.Tensor  # [batch, seq_len]
+    attention_mask: torch.Tensor  # [batch, total_len]
+    past_key_values: "DynamicCache"  # Batched KV cache
+    cache_lengths: List[int]  # Original cache length per sample
+    query_lengths: List[int]  # Query length per sample
+    global_offsets: List[int]  # Global offset per sample
+
+
+def pad_kv_cache_for_batch(
+    caches: List[DynamicCache],
+    layer_devices: Dict[int, torch.device],
+    primary_device: torch.device,
+) -> Tuple[DynamicCache, List[int]]:
+    """
+    Pad and batch multiple KV caches into a single batched cache using LEFT-PADDING.
+    
+    NOTE: This uses left-padding strategy where shorter sequences are padded at the start.
+    This requires the Attention Mask to have 0s for the padded prefix positions.
+    The input_ids passed to batch_generate MUST also be left-padded to match.
+    
+    Args:
+        caches: List of DynamicCache objects (one per agent)
+        layer_devices: Device mapping for each layer
+        primary_device: Fallback device
+        
+    Returns:
+        Batched DynamicCache and list of original cache lengths
+    """
+    if not caches:
+        return DynamicCache(), []
+    
+    # Get cache lengths
+    cache_lengths = []
+    for cache in caches:
+        if len(cache) > 0 and len(cache[0]) > 0:
+            cache_lengths.append(cache[0][0].shape[2])  # [batch, heads, seq_len, dim]
+        else:
+            cache_lengths.append(0)
+    
+    max_cache_len = max(cache_lengths) if cache_lengths else 0
+    batch_size = len(caches)
+    num_layers = len(caches[0]) if caches and len(caches[0]) > 0 else 0
+    
+    if max_cache_len == 0 or num_layers == 0:
+        return DynamicCache(), cache_lengths
+    
+    # Pre-calculate padding sizes for efficiency
+    pad_sizes = [max_cache_len - length for length in cache_lengths]
+    
+    # Create batched cache
+    batched_cache = DynamicCache()
+    
+    for layer_idx in range(num_layers):
+        # Get shape from first cache
+        k_sample, v_sample = caches[0][layer_idx]
+        num_heads = k_sample.shape[1]
+        head_dim = k_sample.shape[3]
+        target_device = layer_devices.get(layer_idx, primary_device)
+        dtype = k_sample.dtype
+        
+        # Create padded tensors for this layer
+        # Shape: [batch, num_heads, max_seq_len, head_dim]
+        batched_k = torch.zeros(
+            (batch_size, num_heads, max_cache_len, head_dim),
+            dtype=dtype, device=target_device
+        )
+        batched_v = torch.zeros(
+            (batch_size, num_heads, max_cache_len, head_dim),
+            dtype=dtype, device=target_device
+        )
+        
+        # Copy each cache into the batched tensor (left-padded)
+        for batch_idx, cache in enumerate(caches):
+            if cache_lengths[batch_idx] == 0:
+                continue
+                
+            k, v = cache[layer_idx]
+            # Move to target device with non_blocking for better performance
+            k = k.to(target_device, non_blocking=True)
+            v = v.to(target_device, non_blocking=True)
+            
+            # Left-pad: put content at the END of the tensor
+            # Layout: [Pad, Pad, ..., Data, Data]
+            start_pos = pad_sizes[batch_idx]
+            batched_k[batch_idx, :, start_pos:, :] = k.squeeze(0)
+            batched_v[batch_idx, :, start_pos:, :] = v.squeeze(0)
+        
+        batched_cache.update(batched_k, batched_v, layer_idx)
+    
+    # Set _seen_tokens to max length (important for transformers internals)
+    batched_cache._seen_tokens = max_cache_len
+    
+    return batched_cache, cache_lengths
+
+
+def batch_generate(
+    model: "PreTrainedModel",
+    tokenizer: "PreTrainedTokenizer",
+    batch_inputs: BatchQueryInputs,
+    max_new_tokens: int = 8192,
+    repetition_penalty: float = 1.1,
+) -> List[str]:
+    """
+    Perform batch generation with shared model.
+    
+    IMPORTANT: This function expects LEFT-PADDED input_ids to match the left-padded
+    KV cache. The last token position [:, -1] should contain valid logits.
+    
+    Args:
+        model: The language model
+        tokenizer: The tokenizer
+        batch_inputs: Prepared batch inputs (input_ids must be LEFT-PADDED)
+        max_new_tokens: Maximum tokens to generate per sample
+        repetition_penalty: Penalty for repeated tokens
+        
+    Returns:
+        List of generated responses
+    """
+    batch_size = batch_inputs.input_ids.shape[0]
+    device = batch_inputs.input_ids.device
+    
+    eos_token_ids = [tokenizer.eos_token_id] if not isinstance(
+        tokenizer.eos_token_id, (list, tuple)
+    ) else list(tokenizer.eos_token_id)
+    
+    # Track generated tokens per sample
+    generated_tokens: List[List[int]] = [[] for _ in range(batch_size)]
+    finished = [False] * batch_size
+    
+    # Current inputs
+    current_input_ids = batch_inputs.input_ids
+    current_attention_mask = batch_inputs.attention_mask
+    current_position_ids = batch_inputs.position_ids
+    past_kv = batch_inputs.past_key_values
+    
+    # Current position for each sample (after first forward)
+    # This is the semantic position, not the tensor index
+    current_positions = [
+        batch_inputs.global_offsets[i] + batch_inputs.query_lengths[i]
+        for i in range(batch_size)
+    ]
+    
+    with torch.no_grad():
+        # First forward pass
+        outputs = model(
+            input_ids=current_input_ids,
+            attention_mask=current_attention_mask,
+            position_ids=current_position_ids,
+            past_key_values=past_kv,
+            use_cache=True,
+        )
+        
+        # Get next tokens from the LAST position of each sequence
+        # Since input_ids is LEFT-PADDED, [:, -1] is the last real token for all samples
+        next_token_logits = outputs.logits[:, -1, :].clone()
+        next_tokens = next_token_logits.argmax(dim=-1)  # [batch]
+        
+        for i in range(batch_size):
+            token_id = next_tokens[i].item()
+            generated_tokens[i].append(token_id)
+            if token_id in eos_token_ids:
+                finished[i] = True
+        
+        past_kv = outputs.past_key_values
+        
+        # Continue generation
+        for step in range(max_new_tokens - 1):
+            if all(finished):
+                break
+            
+            # Prepare next input - single token per sample
+            next_input_ids = next_tokens.unsqueeze(1)  # [batch, 1]
+            
+            # Update attention mask - append 1 for the new token
+            current_attention_mask = torch.cat([
+                current_attention_mask,
+                torch.ones((batch_size, 1), dtype=torch.long, device=device)
+            ], dim=1)
+            
+            # Position IDs for next token (semantic positions)
+            next_position_ids = torch.tensor(
+                [[pos] for pos in current_positions],
+                dtype=torch.long, device=device
+            )
+            
+            outputs = model(
+                input_ids=next_input_ids,
+                attention_mask=current_attention_mask,
+                position_ids=next_position_ids,
+                past_key_values=past_kv,
+                use_cache=True,
+            )
+            
+            next_token_logits = outputs.logits[:, -1, :].clone()
+            
+            # Apply repetition penalty per sample
+            for i in range(batch_size):
+                if not finished[i]:
+                    recent_tokens = set(generated_tokens[i][-50:])
+                    for token_id in recent_tokens:
+                        if next_token_logits[i, token_id] > 0:
+                            next_token_logits[i, token_id] /= repetition_penalty
+                        else:
+                            next_token_logits[i, token_id] *= repetition_penalty
+            
+            next_tokens = next_token_logits.argmax(dim=-1)
+            
+            for i in range(batch_size):
+                if not finished[i]:
+                    token_id = next_tokens[i].item()
+                    generated_tokens[i].append(token_id)
+                    current_positions[i] += 1
+                    if token_id in eos_token_ids:
+                        finished[i] = True
+            
+            past_kv = outputs.past_key_values
+    
+    # Decode all responses
+    responses = []
+    for tokens in generated_tokens:
+        response = tokenizer.decode(tokens, skip_special_tokens=True)
+        responses.append(response)
+    
+    return responses
 
 
 class MemoryAgent:
-    def __init__(self, model_id: str, 
-                 model_context_window: int =32768, 
-                 attn_implementation: str = "sdpa",
-                   device_map: str = "auto", 
-                   quantization_config=None,
-                   max_memory=None,
-                   offload_folder=None,
-                   load_from_block_id: str = None,
-                   load_timestamp: str = None,
-                   block_size_ratio: float=0.125):
+    """
+    Memory agent that manages KV cache for a block of text chunks.
+    
+    Supports two modes:
+    1. Shared model mode (recommended): Pass shared_model and shared_tokenizer
+    2. Standalone mode (legacy): Agent loads its own model
+    
+    Shared model mode is more memory efficient and allows true parallelism
+    with batch inference.
+    """
+    
+    def __init__(
+        self,
+        model_id: str,
+        model_context_window: int = 32768,
+        attn_implementation: str = "sdpa",
+        device_map: str = "auto",
+        quantization_config: Optional[Dict] = None,
+        max_memory: Optional[Dict] = None,
+        offload_folder: Optional[str] = None,
+        load_from_block_id: Optional[str] = None,
+        load_timestamp: Optional[str] = None,
+        block_size_ratio: float = 0.125,
+        # New parameters for shared model support
+        shared_model: Optional["PreTrainedModel"] = None,
+        shared_tokenizer: Optional["PreTrainedTokenizer"] = None,
+        shared_layer_devices: Optional[Dict[int, torch.device]] = None,
+    ):
+        """
+        Initialize MemoryAgent.
+        
+        Args:
+            model_id: HuggingFace model ID or local path
+            model_context_window: Model's context window size
+            attn_implementation: Attention implementation type
+            device_map: Device mapping strategy
+            quantization_config: Quantization configuration
+            max_memory: Max memory per GPU device
+            offload_folder: Folder for offloading weights
+            load_from_block_id: Block ID to load from (for resuming)
+            load_timestamp: Timestamp of block to load
+            block_size_ratio: Block size as ratio of context window
+            shared_model: Pre-loaded model to share (recommended for multi-agent)
+            shared_tokenizer: Pre-loaded tokenizer to share
+            shared_layer_devices: Pre-computed layer device mapping
+        """
         self.model_id = model_id
         self.model_context_window = model_context_window
-        self.block_size_ratio=block_size_ratio
+        self.block_size_ratio = block_size_ratio
         self.block_size = int(model_context_window * block_size_ratio)
-
-        self.summary=None
+        self.summary = None
+        self._owns_model = shared_model is None  # Track if we own the model
         
-        logger.info(f"Loading model: {model_id}")
-        self.tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-        logger.debug(f"Tokenizer loaded for {model_id}")
-
-        self.is_active=True     # This will set False if the block is full, and then this agent can not add new memories, but can still be queried
-        
-        model_kwargs = {
-            "device_map": device_map,
-            "attn_implementation": attn_implementation,
-            "trust_remote_code": True
-        }
-        if quantization_config is not None:
-            model_kwargs["quantization_config"] = quantization_config
+        # Use shared model/tokenizer if provided, otherwise load our own
+        if shared_model is not None and shared_tokenizer is not None:
+            logger.debug(f"Using shared model for agent (model_id: {model_id})")
+            self.model = shared_model
+            self.tokenizer = shared_tokenizer
+            self.layer_devices = shared_layer_devices or self._get_layer_devices()
+            self.primary_device = self.layer_devices.get(0, self.model.device)
         else:
-            model_kwargs["dtype"] = torch.bfloat16
-        
-        if max_memory is not None:
-            model_kwargs["max_memory"] = max_memory
-        if offload_folder is not None:
-            model_kwargs["offload_folder"] = offload_folder
-        
-        self.model = AutoModelForCausalLM.from_pretrained(model_id, **model_kwargs)
-        logger.info(f"Model loaded successfully: {model_id}")
-        
-        # Get layer-to-device mapping
-        self.layer_devices = self._get_layer_devices()
-        self.primary_device = self.layer_devices.get(0, self.model.device)
-        logger.info(f"Layer devices mapped: {len(self.layer_devices)} layers across devices")
+            # Legacy mode: load model ourselves
+            logger.info(f"Loading model: {model_id}")
+            self.tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+            logger.debug(f"Tokenizer loaded for {model_id}")
+            
+            model_kwargs = {
+                "device_map": device_map,
+                "attn_implementation": attn_implementation,
+                "trust_remote_code": True
+            }
+            if quantization_config is not None:
+                model_kwargs["quantization_config"] = quantization_config
+            else:
+                model_kwargs["dtype"] = torch.bfloat16
+            
+            if max_memory is not None:
+                model_kwargs["max_memory"] = max_memory
+            if offload_folder is not None:
+                model_kwargs["offload_folder"] = offload_folder
+            
+            self.model = AutoModelForCausalLM.from_pretrained(model_id, **model_kwargs)
+            logger.info(f"Model loaded successfully: {model_id}")
+            
+            # Get layer-to-device mapping
+            self.layer_devices = self._get_layer_devices()
+            self.primary_device = self.layer_devices.get(0, self.model.device)
+            logger.info(f"Layer devices mapped: {len(self.layer_devices)} layers across devices")
+
+        self.is_active = True  # False when block is full
         
         self._extract_chat_tokens()
         logger.debug(f"Chat tokens extracted: role_start='{self.role_start}', role_end='{self.role_end}'")
@@ -482,17 +763,179 @@ class MemoryAgent:
     def query(self, question: str, max_new_tokens: int = 8192) -> str:
         """
         Query using cached knowledge.
+        
         Args:
-            question (str): The user question.
-            max_new_tokens (int): Maximum number of tokens to generate.
+            question: The user question.
+            max_new_tokens: Maximum number of tokens to generate.
+            
         Returns:
-            str: The generated response.
+            The generated response.
         """
         logger.debug(f"Querying memory agent: {question[:50]}...")
         # Use semaphore to limit concurrent GPU operations
         if not self.is_active:
             with _gpu_semaphore:
-                result = self._agent_generate(max_new_tokens=max_new_tokens, question=question)
+                # Use model lock for thread safety when sharing model
+                if not self._owns_model:
+                    with _model_lock:
+                        result = self._agent_generate(max_new_tokens=max_new_tokens, question=question)
+                else:
+                    result = self._agent_generate(max_new_tokens=max_new_tokens, question=question)
             return result
         else:
+            # Active agent - use lock if sharing model
+            if not self._owns_model:
+                with _model_lock:
+                    return self._agent_generate(max_new_tokens=max_new_tokens, question=question)
             return self._agent_generate(max_new_tokens=max_new_tokens, question=question)
+    
+    def prepare_query_inputs(
+        self, question: str
+    ) -> Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, "DynamicCache", bool]]:
+        """
+        Prepare inputs for batch query (without running the model).
+        
+        This method prepares all inputs needed for generation, allowing
+        multiple agents' queries to be batched together.
+        
+        Args:
+            question: The user question.
+            
+        Returns:
+            Tuple of (input_ids, position_ids, attention_mask, base_cache, cache_loaded_from_disk)
+            or None if no knowledge available.
+        """
+        if not self.saved_chunks:
+            logger.warning(f"No knowledge available (block_id={self.current_block.block_id})")
+            return None
+        
+        # Prepare base cache
+        base_cache = self.merged_cache
+        cache_loaded_from_disk = False
+        
+        if base_cache is None:
+            if not self.is_active:
+                # Check if cache was pre-loaded to CPU
+                if hasattr(self, '_cpu_cache') and self._cpu_cache is not None:
+                    logger.debug(f"Transferring pre-loaded cache to GPU (block {self.current_block.block_id})")
+                    base_cache = DynamicCache()
+                    for layer_idx, (k, v) in enumerate(self._cpu_cache):
+                        target_device = self.layer_devices.get(layer_idx, self.primary_device)
+                        base_cache.update(k.to(target_device), v.to(target_device), layer_idx)
+                    cache_loaded_from_disk = True
+                else:
+                    # Fallback: load from disk
+                    cache_state = self.current_block.load_cache()
+                    cached_model_id = cache_state.get("model_id")
+                    if cached_model_id and cached_model_id != self.model_id:
+                        raise ValueError(f"Model mismatch: cache '{cached_model_id}' vs '{self.model_id}'")
+                    
+                    if "merged_cache" in cache_state and cache_state["merged_cache"]:
+                        logger.info(f"Loading cache from disk for inactive agent (block {self.current_block.block_id})")
+                        base_cache = DynamicCache()
+                        for layer_idx, (k, v) in enumerate(cache_state["merged_cache"]):
+                            target_device = self.layer_devices.get(layer_idx, self.primary_device)
+                            base_cache.update(k.to(target_device), v.to(target_device), layer_idx)
+                        cache_loaded_from_disk = True
+                    else:
+                        raise RuntimeError("No cache available for inactive agent.")
+            else:
+                raise RuntimeError("Active agent cache inconsistency")
+        
+        # Format query
+        formatted_query = f"\n\nBased on the context information provided above, please extract the original information that is relevant to the question(**REMEBER to give EXACT datetime** along with information, and the datetime format is 'YYYY-MM-DD HH:MM:SS'.):\n{question}{self.role_end}\n{self.role_start}assistant\n"
+        
+        first_layer_device = self.layer_devices.get(0, self.primary_device)
+        input_ids = self.tokenizer.encode(formatted_query, return_tensors="pt", add_special_tokens=False).to(first_layer_device)
+        query_len = input_ids.shape[1]
+        
+        # Position IDs
+        position_ids = torch.arange(self.global_offset, self.global_offset + query_len, dtype=torch.long, device=first_layer_device).unsqueeze(0)
+        
+        # Attention mask
+        cache_length = base_cache.get_seq_length()
+        if cache_length == 0 and len(base_cache) > 0:
+            cache_length = base_cache[0][0].shape[-2]
+        attention_mask = torch.ones((1, cache_length + query_len), dtype=torch.long, device=first_layer_device)
+        
+        return input_ids, position_ids, attention_mask, base_cache, cache_loaded_from_disk
+    
+    def get_cache_for_batch(self) -> Optional[Tuple[DynamicCache, int, bool]]:
+        """
+        Get KV cache ready for batch processing.
+        
+        Returns:
+            Tuple of (cache, global_offset, cache_loaded_from_disk) or None if not available.
+        """
+        if not self.saved_chunks:
+            return None
+        
+        base_cache = self.merged_cache
+        cache_loaded_from_disk = False
+        
+        if base_cache is None:
+            if not self.is_active:
+                if hasattr(self, '_cpu_cache') and self._cpu_cache is not None:
+                    logger.debug(f"Transferring cache to GPU for batch (block {self.current_block.block_id})")
+                    base_cache = DynamicCache()
+                    for layer_idx, (k, v) in enumerate(self._cpu_cache):
+                        target_device = self.layer_devices.get(layer_idx, self.primary_device)
+                        base_cache.update(k.to(target_device), v.to(target_device), layer_idx)
+                    cache_loaded_from_disk = True
+                else:
+                    cache_state = self.current_block.load_cache()
+                    if "merged_cache" in cache_state and cache_state["merged_cache"]:
+                        base_cache = DynamicCache()
+                        for layer_idx, (k, v) in enumerate(cache_state["merged_cache"]):
+                            target_device = self.layer_devices.get(layer_idx, self.primary_device)
+                            base_cache.update(k.to(target_device), v.to(target_device), layer_idx)
+                        cache_loaded_from_disk = True
+                    else:
+                        return None
+            else:
+                return None
+        
+        return base_cache, self.global_offset, cache_loaded_from_disk
+    
+    def format_query_for_batch(self, question: str) -> Tuple[torch.Tensor, int]:
+        """
+        Format query and return input_ids for batch processing.
+        
+        Args:
+            question: The user question.
+            
+        Returns:
+            Tuple of (input_ids tensor, query_length)
+        """
+        formatted_query = (
+            f"\n\nBased on the context information provided above, please extract "
+            f"the original information that is relevant to the question(**REMEBER "
+            f"to give EXACT datetime** along with information, and the datetime "
+            f"format is 'YYYY-MM-DD HH:MM:SS'.):\n{question}{self.role_end}\n"
+            f"{self.role_start}assistant\n"
+        )
+        
+        first_layer_device = self.layer_devices.get(0, self.primary_device)
+        input_ids = self.tokenizer.encode(
+            formatted_query, return_tensors="pt", add_special_tokens=False
+        ).to(first_layer_device)
+        
+        return input_ids, input_ids.shape[1]
+    
+    def cleanup_after_query(self, base_cache: Optional["DynamicCache"], cache_loaded_from_disk: bool) -> None:
+        """
+        Cleanup resources after query completion.
+        
+        Args:
+            base_cache: The cache used for query.
+            cache_loaded_from_disk: Whether cache was loaded from disk.
+        """
+        # For inactive agents, unload cache from GPU after query
+        if cache_loaded_from_disk and base_cache is not None:
+            logger.debug("Unloading cache from GPU for inactive agent")
+            del base_cache
+        # Clear CPU cache reference
+        if hasattr(self, '_cpu_cache'):
+            self._cpu_cache = None
+        # Aggressive cleanup
+        torch.cuda.empty_cache()

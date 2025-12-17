@@ -253,6 +253,9 @@ def process_sample(
             max_memory=config.get('max_memory'),
             max_memory_segments=config['memory'].get('max_memory_segments'),
             max_blocks=config['memory'].get('max_blocks', 5),
+            # Batch inference parameters for GPU parallelism
+            query_batch_size=config['memory'].get('query_batch_size', 4),
+            max_parallel_cache_loads=config['memory'].get('max_parallel_cache_loads', 8),
         )
         logger.info("[OK] ChatManager created")
         

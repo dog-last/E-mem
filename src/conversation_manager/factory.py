@@ -1,7 +1,7 @@
 """Factory for creating ChatManager with different storage backends."""
 
 import logging
-from typing import Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 from src.conversation_manager.chat_handler import ChatManager, TextStorageChatManager
 
@@ -11,19 +11,24 @@ logger = logging.getLogger(__name__)
 def create_chat_manager(
     storage_mode: Literal["kv_cache", "text"] = "kv_cache",
     model_id: str = "Qwen/Qwen3-4B",
-    openai_config: dict = None,
+    openai_config: Optional[Dict[str, Any]] = None,
     clean_cache_first: bool = True,
     model_context_window: int = 32768,
-    router_system_prompt: str = None,
+    router_system_prompt: Optional[str] = None,
     overlap_mode: str = "chunk",
     overlap_ratio: float = 0.1,
     block_size_ratio: float = 0.125,
     max_memory_segments: Optional[int] = None,
     max_blocks: int = 5,
-    **kwargs,
-):
+    query_batch_size: int = 4,
+    max_parallel_cache_loads: int = 8,
+    **kwargs: Any,
+) -> Any:
     """
     Factory function to create ChatManager with specified storage backend.
+    
+    Uses shared model architecture for memory-efficient multi-block queries.
+    Supports both single-GPU and multi-GPU configurations.
 
     Args:
         storage_mode: "kv_cache" for KV cache storage, "text" for text-based storage
@@ -37,6 +42,8 @@ def create_chat_manager(
         block_size_ratio: Block size relative to context window (0.0-1.0)
         max_memory_segments: Maximum memory segments to return per block query
         max_blocks: Maximum number of memory blocks to select by router
+        query_batch_size: Queries to batch together (higher = more throughput, more memory)
+        max_parallel_cache_loads: Max parallel KV cache loads to GPU
         **kwargs: Additional arguments passed to ChatManager
             For kv_cache mode: attn_implementation, device_map, quantization_config, max_memory, offload_folder
 
@@ -44,13 +51,22 @@ def create_chat_manager(
         ChatManager or TextStorageChatManager instance
 
     Example:
-        # KV Cache mode (default)
+        # KV Cache mode with resource optimization for multi-GPU
         chat_manager = create_chat_manager(
             storage_mode="kv_cache",
             model_id="Qwen/Qwen3-4B",
             openai_config={"api_key": "your-key"},
             max_memory_segments=5,
-            max_blocks=5
+            max_blocks=5,
+            max_parallel_cache_loads=8,  # For multi-GPU with lots of memory
+        )
+
+        # KV Cache mode for single GPU with limited memory
+        chat_manager = create_chat_manager(
+            storage_mode="kv_cache",
+            model_id="Qwen/Qwen3-4B",
+            openai_config={"api_key": "your-key"},
+            max_parallel_cache_loads=2,  # Conservative for limited memory
         )
 
         # Text storage mode
@@ -74,6 +90,8 @@ def create_chat_manager(
             block_size_ratio=block_size_ratio,
             max_memory_segments=max_memory_segments,
             max_blocks=max_blocks,
+            query_batch_size=query_batch_size,
+            max_parallel_cache_loads=max_parallel_cache_loads,
             **kwargs,
         )
     elif storage_mode == "text":
@@ -84,6 +102,8 @@ def create_chat_manager(
             "quantization_config",
             "max_memory",
             "offload_folder",
+            "query_batch_size",
+            "max_parallel_cache_loads",
         ]
         ignored_params = [k for k in kwargs if k in gpu_params]
         if ignored_params:
