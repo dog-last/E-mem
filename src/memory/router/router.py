@@ -262,7 +262,7 @@ class Router(BaseAgent):
                 results.append(result)
                 # Log each block's result
                 block_id = getattr(agent.current_block, 'block_id', f'agent_{i}')
-                logger.info(f"Block {block_id} result: {result[:200]}..." if len(result) > 200 else f"Block {block_id} result: {result}")
+                logger.info(f"Block {block_id} result: {result}")
             except Exception as e:
                 logger.error(f"Error querying agent {i}: {e}", exc_info=True)
                 results.append(f"[ERROR] Query failed: {e}")
@@ -299,8 +299,7 @@ class Router(BaseAgent):
                     agent = agents[i]
                     block_id = getattr(agent.current_block, 'block_id', f'agent_{i}')
                     logger.info(
-                        f"Block {block_id} result: {result[:200]}..." 
-                        if len(result) > 200 else f"Block {block_id} result: {result}"
+                        f"Block {block_id} result: {result}" 
                     )
             except Exception as e:
                 logger.error(f"Batch query failed: {e}", exc_info=True)
@@ -311,8 +310,7 @@ class Router(BaseAgent):
                         all_results[i] = result
                         block_id = getattr(agent.current_block, 'block_id', f'agent_{i}')
                         logger.info(
-                            f"Block {block_id} result (fallback): {result[:200]}..." 
-                            if len(result) > 200 else f"Block {block_id} result (fallback): {result}"
+                            f"Block {block_id} result (fallback): {result}"
                         )
                     except Exception as inner_e:
                         all_results[i] = f"[ERROR] Query failed: {inner_e}"
