@@ -205,12 +205,12 @@ class BaseChatManager(BaseAgent):
             logger.info(f"Querying memory: {query}")
             raw_result = self.memory_handler.query_memory(query)
             logger.info(f"Raw memory query result length: {len(raw_result)} chars")
-            logger.debug(f"Memory query result: {raw_result}")
+            logger.info(f"Memory query result: {raw_result}")
 
             # Aggregate results using LLM
             aggregated_result = self._aggregate_memory_results(query, raw_result)
             logger.info(f"Memory query aggregated, result length: {len(aggregated_result)} chars")
-            logger.debug(f"Aggregated result: {aggregated_result}")
+            logger.info(f"Aggregated result: {aggregated_result}")
 
             # Store the aggregated memory for evaluation
             self.last_queried_memory = aggregated_result
@@ -233,9 +233,6 @@ class BaseChatManager(BaseAgent):
         Returns:
             Aggregated and simplified results.
         """
-        logger.info("Search results after limiting to target max memory segments:")
-        for raw_result in raw_results:
-            logger.info(f"Raw result: {raw_result}")
         prompt = AGGREGATOR_PROMPT.format(query=query, results=raw_results)
 
         try:
@@ -245,7 +242,6 @@ class BaseChatManager(BaseAgent):
                 max_tokens=2048,
                 temperature=0,
             )
-            logger.info(f"Aggregate Result: {response.choices[0].message.content}")
             return response.choices[0].message.content
         except Exception as e:
             logger.error(f"Aggregation failed: {e}", exc_info=True)
