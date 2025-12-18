@@ -233,6 +233,9 @@ class BaseChatManager(BaseAgent):
         Returns:
             Aggregated and simplified results.
         """
+        logger.info("Search results after limiting to target max memory segments:")
+        for raw_result in raw_results:
+            logger.info(f"Raw result: {raw_result}")
         prompt = AGGREGATOR_PROMPT.format(query=query, results=raw_results)
 
         try:
