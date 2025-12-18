@@ -245,6 +245,7 @@ class BaseChatManager(BaseAgent):
                 max_tokens=2048,
                 temperature=0,
             )
+            logger.info(f"Aggregate Result: {response.choices[0].message.content}")
             return response.choices[0].message.content
         except Exception as e:
             logger.error(f"Aggregation failed: {e}", exc_info=True)
