@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 import yaml
+from openai import OpenAI
 
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -118,10 +119,11 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
         
         # Create agent
         storage_mode = config['memory'].get('storage_mode', 'kv_cache')
+        openai_config = config['model']['openai_config']
         agent = create_chat_manager(
             storage_mode=storage_mode,
             model_id=config['model']['model_id'],
-            openai_config=config['model']['openai_config'],
+            openai_config=openai_config,
             clean_cache_first=config['memory']['clean_cache_first'],
             model_context_window=config['model']['model_context_window'],
             attn_implementation=config['model'].get('attn_implementation', 'sdpa'),
@@ -139,6 +141,13 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
             max_parallel_cache_loads=config['memory'].get('max_parallel_cache_loads', 8),
             enable_router=config['memory'].get('enable_router', True),
         )
+
+        # Set up working client for final answer generation
+        working_client = OpenAI(
+            api_key=openai_config['api_key'],
+            base_url=openai_config['base_url']
+        )
+        working_model = openai_config['model']
         
         # Store conversations
         logger.info("\n--- Storing Conversation Memories ---")
@@ -149,11 +158,11 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
                 if conversation_auto_save:
                     memory_text = f"[{session.date_time}] {turn.speaker}: {turn.text}\n"
                 else:
-                    memory_text = f"YOU MUST use add_memory tool to store the extracted information from the following text WITH EXACTTIME(**MUST STORE THE TIME IN THE FORMAT OF 'YYYY-MM-DD HH:MM:SS'**) and speaker.[{session.date_time}] {turn.speaker}: {turn.text}"
+                    memory_text = f"[{session.date_time}] {turn.speaker}: {turn.text}"
                 
                 try:
-                    # Use auto_save for conversation turns if enabled
-                    agent.chat(memory_text, auto_save=conversation_auto_save)
+                    # Use direct memory addition instead of chat
+                    agent.add_memory(memory_text)
                     logger.info(f"Stored: {memory_text[:100]}...")
                 except Exception as e:
                     logger.error(f"Error storing memory: {e}")
@@ -189,7 +198,7 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
                 logger.warning(f"Skipping question without reference answer: {qa.question}")
                 continue
             
-            # Build prompt based on category
+            # Build specialized instructions based on category
             if qa.category == 5:
                 # Adversarial question - randomize answer order
                 answer_tmp = []
@@ -200,11 +209,7 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
                     answer_tmp.append(wrong_answer)
                     answer_tmp.append(reference_answer)
                 
-                prompt = prompt = f"""You MUST use query_memory tool to search the conversation history. Try the original question as query at the first time. And if failed, adapt your search strategy based on the question to find the most relevant information.
-
-Question: {qa.question}
-
-### CRITICAL: THE "REJECTION FIRST" PROTOCOL
+                instructions = f"""### CRITICAL: THE "REJECTION FIRST" PROTOCOL
 Your goal is to PROVE that the answer is MISSING. You must actively try to disqualify any potential evidence.
 
 1. **Default Verdict:** Start with the assumption that the correct answer is "Not mentioned".
@@ -221,7 +226,7 @@ Your goal is to PROVE that the answer is MISSING. You must actively try to disqu
 
 YOU MUST Select the correct answer: '{answer_tmp[0]}' or '{answer_tmp[1]}'. Provide ONLY the selected answer without explanation."""
             elif qa.category == 2:  # Date/Time Questions
-                prompt = f"""You are a precise date extraction and normalization assistant.
+                instructions = """You are a precise date extraction and normalization assistant.
 Your task is to answer the question based on the document and STRICTLY adhere to the formatting rules below.
 
 ### STEP 1: DETERMINE OUTPUT MODE
@@ -250,12 +255,9 @@ Analyze the `Question` text provided at the bottom.
 ### STEP 3: CRITICAL CONSTRAINTS
 1.  **ANTI-REFUSAL:** **NEVER** output phrases like "not mentioned", "unknown", "N/A", or "does not say".
     * If the exact answer is missing, you **MUST infer** the most reasonable date/duration from the context and format it.
-2.  **CLEAN OUTPUT:** Output **ONLY** the final string. No intro text, no punctuation (periods) at the end.
-
-Question: {qa.question}
-"""
+2.  **CLEAN OUTPUT:** Output **ONLY** the final string. No intro text, no punctuation (periods) at the end."""
             elif qa.category == 1:  # Fact Retrieval/General
-                prompt = prompt = f"""Based on the text below, analyze the context to provide the best answer to the question.
+                instructions = """Based on the text below, analyze the context to provide the best answer to the question.
 
 ### PROCESS
 1. **Understand:** Fully grasp the specific details requested by the question.
@@ -265,16 +267,13 @@ Question: {qa.question}
 ### CRITICAL CONSTRAINTS
 * **Strict Relevance:** **NEVER** output content unrelated to the question. Focus ONLY on the specific details requested.
 * **Anti-Refusal:** **NEVER** say "not mentioned". Even if the answer is not explicitly stated, you **MUST** infer the **most probable answer** based on the provided evidence.
-* **Format:** The final OUTPUT must be a **short phrase** (under 10 words). NO sentences.
-
-Question: {qa.question}
-"""
+* **Format:** The final OUTPUT must be a **short phrase** (under 10 words). NO sentences."""
             elif qa.category == 3:  # Analysis/Inference Questions
-                prompt = f"""Based on the text below, write an answer in the form of **a short phrase** for the following question, not a sentence.
+                instructions = """Based on the text below, write an answer in the form of **a short phrase** for the following question, not a sentence.
 ### CRITICAL: CONDITIONAL FORMATTING
 1. **"Would" Questions:**
    * **Case A (Selection):** If the question asks to choose between options (often containing "or", e.g., "Would X or Y happen?"), output the **specific option** selected.
-     * *Example:* "Would he use Python or Java?" -> "Python"
+     * *Example:** "Would he use Python or Java?" -> "Python"
    * **Case B (Prediction/Judgment):** If the question asks for a yes/no prediction or feasibility, your answer **MUST** start with **"Likely yes"** or **"Likely no"**.
      * *Example:* "Would this be accepted?" -> "Likely yes, due to..."
 2. **Other Questions:**
@@ -283,48 +282,57 @@ Question: {qa.question}
 
 ### CRITICAL: ANTI-REFUSAL POLICY
 * **NEVER** output refusal phrases.
-* **ALWAYS** infer the best possible answer based on available evidence.
-
-Question: {qa.question}
-"""
+* **ALWAYS** infer the best possible answer based on available evidence."""
             elif qa.category == 4:
                 # Detailed question
-                prompt = f"""You are an extractive QA assistant. Your goal is to extract the exact answer substring from the text.
+                instructions = """You are an extractive QA assistant. Your goal is to extract the exact answer substring from the text.
 
 INSTRUCTIONS:
 1. Locate the exact answer in the TEXT.
 2. Output **ONLY** the key entity, date, name, or short phrase representing the answer.
 3. **DO NOT** use full sentences. **DO NOT** add filler words like "The answer is", "a", "the", "she is".
 4. Keep it as short as possible (ideally 1-5 words).
-5. Use the EXACT wording from the text if possible.
-
-QUESTION:{qa.question}
-
-Answer:
-"""
+5. Use the EXACT wording from the text if possible."""
             else:
                 # Other categories
-                prompt = f"""You MUST use query_memory tool to search the conversation history. Try the original question as query at the first time. And if fail, modify your search strategy as needed to find the most relevant information.
-
-Question: {qa.question}
-
-Use DATE of CONVERSATION to answer with an approximate date. Write an answer in the form of a short phrase. Answer with exact words from the context whenever possible. Short answer:"""
+                instructions = """Use DATE of CONVERSATION to answer with an approximate date. Write an answer in the form of a short phrase. Answer with exact words from the context whenever possible. Short answer:"""
             
             logger.info(f"\nQuestion {total_questions} (Category {qa.category}): {qa.question}")
             
             try:
-                # NEVER use auto_save for QA questions
-                # Use higher max_new_tokens to allow multiple tool calling rounds
-                prediction = agent.chat(prompt, auto_save=False, max_new_tokens=4096)
+                # 1. Search memory for context
+                logger.info("Searching memory...")
+                research_summary = agent.search_memory(qa.question)
+                logger.info(f"Research summary: {research_summary[:200]}...")
+                
+                # 2. Build final prompt for working model
+                prompt = f"""You are an expert at answering questions based on conversation history.
+
+Instructions:
+{instructions}
+
+Question: {qa.question}
+
+Context:
+{research_summary}
+"""
+                # 3. Generate final answer using working model
+                logger.info("Generating final answer...")
+                response = working_client.chat.completions.create(
+                    model=working_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=256
+                )
+                prediction = response.choices[0].message.content.strip()
                 logger.info(f"Raw prediction: {prediction}")
                 
-                # Extract answer from XML tags for category 1 questions
+                # Extract answer from XML tags if needed (though instructions were updated to be direct)
                 processed_prediction = extract_answer_from_xml(prediction, qa.category)
                 logger.info(f"Processed prediction: {processed_prediction}")
                 logger.info(f"Reference: {reference_answer}")
                 
-                # Capture queried memory content
-                queried_memory = getattr(agent, 'last_queried_memory', None)
+                queried_memory = research_summary
             except Exception as e:
                 logger.error(f"Error answering question: {e}")
                 prediction = "ERROR"

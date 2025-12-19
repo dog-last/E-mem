@@ -79,20 +79,27 @@ class TestSetupLogger:
 
 
 class TestEvaluateDataset:
+    @patch('evaluation.locomo.eval_locomo.OpenAI')
     @patch('evaluation.locomo.eval_locomo.load_locomo_dataset')
     @patch('evaluation.locomo.eval_locomo.create_chat_manager')
     @patch('evaluation.locomo.eval_locomo.calculate_metrics')
     def test_evaluate_dataset_basic(self, mock_calc_metrics, mock_create_chat_manager, 
-                                    mock_load_dataset, mock_config, mock_logger, 
+                                    mock_load_dataset, mock_openai, mock_config, mock_logger, 
                                     mock_samples, tmp_path):
         from evaluation.locomo.eval_locomo import evaluate_dataset
 
         # Setup mocks
         mock_load_dataset.return_value = mock_samples
         mock_agent = Mock()
-        mock_agent.chat.return_value = "Test answer"
-        mock_agent.last_queried_memory = "Test memory content"  # Add this
+        mock_agent.search_memory.return_value = "Test memory content"
         mock_create_chat_manager.return_value = mock_agent
+        
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=Mock(content="Test answer"))]
+        mock_client.chat.completions.create.return_value = mock_response
+
         mock_calc_metrics.return_value = {
             'exact_match': 1, 'f1': 0.9, 'rouge1_f': 0.8,
             'rouge2_f': 0.7, 'rougeL_f': 0.75, 'bleu1': 0.85,
@@ -103,6 +110,11 @@ class TestEvaluateDataset:
         # Update config paths
         mock_config['locomo_eval']['output_dir'] = str(tmp_path / 'results')
         mock_config['logging']['log_dir'] = str(tmp_path / 'logs')
+        mock_config['model']['openai_config'] = {
+            'api_key': 'test',
+            'base_url': 'test',
+            'model': 'test'
+        }
         
         # Run evaluation
         results = evaluate_dataset(mock_config, mock_logger)
@@ -114,21 +126,35 @@ class TestEvaluateDataset:
         assert 'aggregate_metrics' in results
         assert 'individual_results' in results
         assert len(results['individual_results']) == 3
+        
+        # Check that add_memory was called for the turn
+        assert mock_agent.add_memory.called
+        # Check that search_memory was called for questions
+        assert mock_agent.search_memory.called
+        # Check that OpenAI was called for answers
+        assert mock_client.chat.completions.create.called
     
+    @patch('evaluation.locomo.eval_locomo.OpenAI')
     @patch('evaluation.locomo.eval_locomo.load_locomo_dataset')
     @patch('evaluation.locomo.eval_locomo.create_chat_manager')
     def test_evaluate_dataset_with_ratio(self, mock_create_chat_manager, mock_load_dataset,
-                                         mock_config, mock_logger, mock_samples):
+                                         mock_openai, mock_config, mock_logger, mock_samples):
         from evaluation.locomo.eval_locomo import evaluate_dataset
 
         # Create multiple samples
         mock_load_dataset.return_value = mock_samples * 10
         mock_config['locomo_eval']['ratio'] = 0.1
+        mock_config['model']['openai_config'] = {'api_key': 't', 'base_url': 't', 'model': 't'}
         
         mock_agent = Mock()
-        mock_agent.chat.return_value = "Test"
-        mock_agent.last_queried_memory = "Test memory"
+        mock_agent.search_memory.return_value = "Test memory"
         mock_create_chat_manager.return_value = mock_agent
+        
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=Mock(content="Test"))]
+        mock_client.chat.completions.create.return_value = mock_response
         
         with patch('evaluation.locomo.eval_locomo.calculate_metrics') as mock_calc:
             mock_calc.return_value = {'f1': 0.5, 'exact_match': 0}
@@ -138,19 +164,28 @@ class TestEvaluateDataset:
         # Should only process 1 sample (10 * 0.1 = 1)
         assert mock_create_chat_manager.call_count == 1
     
+    @patch('evaluation.locomo.eval_locomo.OpenAI')
     @patch('evaluation.locomo.eval_locomo.load_locomo_dataset')
     @patch('evaluation.locomo.eval_locomo.create_chat_manager')
     @patch('evaluation.locomo.eval_locomo.calculate_metrics')
     def test_category_5_handling(self, mock_calc_metrics, mock_create_chat_manager,
-                                 mock_load_dataset, mock_config, mock_logger, 
+                                 mock_load_dataset, mock_openai, mock_config, mock_logger, 
                                  mock_samples):
         from evaluation.locomo.eval_locomo import evaluate_dataset
         
         mock_load_dataset.return_value = mock_samples
+        mock_config['model']['openai_config'] = {'api_key': 't', 'base_url': 't', 'model': 't'}
+        
         mock_agent = Mock()
-        mock_agent.chat.return_value = "Not mentioned"
-        mock_agent.last_queried_memory = "Test memory"
+        mock_agent.search_memory.return_value = "Test memory"
         mock_create_chat_manager.return_value = mock_agent
+        
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=Mock(content="Not mentioned"))]
+        mock_client.chat.completions.create.return_value = mock_response
+        
         mock_calc_metrics.return_value = {'f1': 1.0, 'exact_match': 1}
         
         with patch('builtins.open', create=True):
@@ -161,17 +196,25 @@ class TestEvaluateDataset:
         assert len(cat5_results) == 1
         assert "Not mentioned" in cat5_results[0]['reference']
     
+    @patch('evaluation.locomo.eval_locomo.OpenAI')
     @patch('evaluation.locomo.eval_locomo.load_locomo_dataset')
     @patch('evaluation.locomo.eval_locomo.create_chat_manager')
     def test_conversation_auto_save(self, mock_create_chat_manager, mock_load_dataset,
-                                    mock_config, mock_logger, mock_samples):
+                                    mock_openai, mock_config, mock_logger, mock_samples):
         from evaluation.locomo.eval_locomo import evaluate_dataset
         
         mock_load_dataset.return_value = mock_samples
+        mock_config['model']['openai_config'] = {'api_key': 't', 'base_url': 't', 'model': 't'}
+        
         mock_agent = Mock()
-        mock_agent.chat.return_value = "Answer"
-        mock_agent.last_queried_memory = "Test memory"
+        mock_agent.search_memory.return_value = "Test memory"
         mock_create_chat_manager.return_value = mock_agent
+        
+        mock_client = Mock()
+        mock_openai.return_value = mock_client
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=Mock(content="Answer"))]
+        mock_client.chat.completions.create.return_value = mock_response
         
         # Enable auto_save for conversations
         mock_config['locomo_eval']['conversation_auto_save'] = True
@@ -181,10 +224,8 @@ class TestEvaluateDataset:
             with patch('builtins.open', create=True):
                 evaluate_dataset(mock_config, mock_logger)
         
-        # Check that chat was called with auto_save=True for conversations
-        conversation_calls = [call for call in mock_agent.chat.call_args_list 
-                            if call[1].get('auto_save')]
-        assert len(conversation_calls) > 0
+        # Check that add_memory was called for conversation turns
+        assert mock_agent.add_memory.called
 
 
 class TestMain:
