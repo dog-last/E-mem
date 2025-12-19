@@ -351,6 +351,7 @@ class MemoryAgent:
             logger.info(f"Layer devices mapped: {len(self.layer_devices)} layers across devices")
 
         self.is_active = True  # False when block is full
+        self.original_texts: List[str] = []  # Store original text chunks for hybrid routing
         
         self._extract_chat_tokens()
         logger.debug(f"Chat tokens extracted: role_start='{self.role_start}', role_end='{self.role_end}'")
@@ -377,6 +378,7 @@ class MemoryAgent:
             self.global_offset = cache_state.get("global_offset", 0)
             self.saved_chunks = cache_state.get("saved_chunks", [])
             self.chunk_number = cache_state.get("chunk_number", 0)
+            self.original_texts = cache_state.get("original_texts", [])
             
             # Load merged_cache if available (for active agent)
             if "merged_cache" in cache_state and cache_state["merged_cache"]:
@@ -462,6 +464,8 @@ class MemoryAgent:
         
         for i, text_chunk in enumerate(text_chunks, 1):
             self.chunk_number += 1
+            # Store original text for hybrid routing
+            self.original_texts.append(text_chunk)
             
             # Format chunk
             if self.global_offset == 0:
@@ -545,7 +549,8 @@ class MemoryAgent:
                 "saved_chunks": self.saved_chunks,
                 "chunk_number": self.chunk_number,
                 "model_id": self.model_id,
-                "merged_cache": [(k.cpu(), v.cpu()) for k, v in self.merged_cache]
+                "merged_cache": [(k.cpu(), v.cpu()) for k, v in self.merged_cache],
+                "original_texts": self.original_texts,  # Store original text for hybrid routing
             }
             self.current_block.save_cache(cache_state, 0)
             logger.info(f"Cache saved to {self.current_block.store_target}")
@@ -734,8 +739,8 @@ class MemoryAgent:
         cleaned_response = re.sub(r'<thinking>.*?</thinking>', '', cleaned_response, flags=re.DOTALL | re.IGNORECASE)
         cleaned_response = re.sub(r'<think>.*?</think>', '', cleaned_response, flags=re.DOTALL | re.IGNORECASE)
         
-        cleaned_response = re.sub(r'\n\s*\n', '\n\n', cleaned_response)  # 规范化多个空行
-        cleaned_response = cleaned_response.strip()  # 去除首尾空白
+        cleaned_response = re.sub(r'\n\s*\n', '\n\n', cleaned_response)
+        cleaned_response = cleaned_response.strip()  
         
         return cleaned_response
     
@@ -939,3 +944,16 @@ class MemoryAgent:
             self._cpu_cache = None
         # Aggressive cleanup
         torch.cuda.empty_cache()
+
+    def get_original_texts(self) -> List[str]:
+        """
+        Get original text chunks for hybrid routing.
+        
+        Returns:
+            List of original text chunks stored in this block.
+        """
+        # For inactive agents, may need to load from cache
+        if not self.original_texts and not self.is_active:
+            cache_state = self.current_block.load_cache()
+            self.original_texts = cache_state.get("original_texts", [])
+        return self.original_texts

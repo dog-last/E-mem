@@ -3,6 +3,7 @@
 from .schema import (
     AppConfig,
     HotpotQAEvalConfig,
+    HybridRouterConfig,
     LocomoEvalConfig,
     LoggingConfig,
     MemoryConfig,
@@ -21,6 +22,7 @@ __all__ = [
     "LoggingConfig",
     "LocomoEvalConfig",
     "HotpotQAEvalConfig",
+    "HybridRouterConfig",
     "load_and_validate_config",
     "validate_openai_config",
     "validate_memory_config",

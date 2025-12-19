@@ -37,7 +37,7 @@ class KVBlock:
         """
         assert isinstance(cache_state, dict), "cache_state must be a dict"
         for key in cache_state.keys():
-            assert key in ['global_offset','saved_chunks','chunk_number','model_id','merged_cache'],"Unknown key found in the cache_state"
+            assert key in ['global_offset','saved_chunks','chunk_number','model_id','merged_cache','original_texts'],"Unknown key found in the cache_state"
         torch.save(cache_state, self.store_target)
         if total_new_token > 0:
             self.block_used += total_new_token

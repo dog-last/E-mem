@@ -6,6 +6,272 @@ import pytest
 from src.memory.router.router import Router
 
 
+class TestRouterSequentialAndBatch:
+    """Test Router sequential and batch query functionality."""
+
+    @pytest.fixture
+    def mock_openai_config(self):
+        return {
+            "api_key": "test-key",
+            "base_url": "http://test",
+            "model": "gpt-4o-mini"
+        }
+
+    @patch("src.agent.base.OpenAI")
+    def test_sequential_query_agents(self, mock_openai, mock_openai_config):
+        """Test _sequential_query_agents method."""
+        router = Router(openai_config=mock_openai_config)
+        
+        # Create mock agents
+        mock_agents = []
+        for i in range(3):
+            mock_agent = Mock()
+            mock_agent.query.return_value = f"Response {i}"
+            mock_agent.current_block = Mock()
+            mock_agent.current_block.block_id = f"block_{i}"
+            mock_agents.append(mock_agent)
+        
+        results = router._sequential_query_agents(mock_agents, "test query")
+        
+        assert len(results) == 3
+        assert results[0] == "Response 0"
+        assert results[1] == "Response 1"
+
+    @patch("src.agent.base.OpenAI")
+    def test_sequential_query_agents_with_error(self, mock_openai, mock_openai_config):
+        """Test _sequential_query_agents handles errors."""
+        router = Router(openai_config=mock_openai_config)
+        
+        mock_agent1 = Mock()
+        mock_agent1.query.return_value = "Response 1"
+        mock_agent1.current_block = Mock()
+        mock_agent1.current_block.block_id = "block_1"
+        
+        mock_agent2 = Mock()
+        mock_agent2.query.side_effect = Exception("Query failed")
+        mock_agent2.current_block = Mock()
+        mock_agent2.current_block.block_id = "block_2"
+        
+        results = router._sequential_query_agents([mock_agent1, mock_agent2], "test")
+        
+        assert len(results) == 2
+        assert "[ERROR]" in results[1]
+
+    @patch("src.agent.base.OpenAI")
+    def test_batch_query_agents_fallback(self, mock_openai, mock_openai_config):
+        """Test _batch_query_agents falls back on batch error."""
+        router = Router(openai_config=mock_openai_config, query_batch_size=2)
+        
+        # Create mock agents
+        mock_agents = []
+        for i in range(2):
+            mock_agent = Mock()
+            mock_agent.query.return_value = f"Fallback Response {i}"
+            mock_agent.current_block = Mock()
+            mock_agent.current_block.block_id = f"block_{i}"
+            mock_agents.append(mock_agent)
+        
+        # Mock _execute_batch_query to fail
+        router._execute_batch_query = Mock(side_effect=Exception("Batch failed"))
+        
+        results = router._batch_query_agents(mock_agents, "test query")
+        
+        assert len(results) == 2
+        assert "Fallback Response" in results[0]
+
+    @patch("src.agent.base.OpenAI")
+    def test_execute_batch_query_empty(self, mock_openai, mock_openai_config):
+        """Test _execute_batch_query with empty agents list."""
+        router = Router(openai_config=mock_openai_config)
+        
+        results = router._execute_batch_query([], "test query")
+        
+        assert results == []
+
+    @patch("src.agent.base.OpenAI")
+    def test_execute_batch_query_no_cache(self, mock_openai, mock_openai_config):
+        """Test _execute_batch_query when agents have no cache."""
+        router = Router(openai_config=mock_openai_config)
+        
+        # Mock agent with no cache
+        mock_agent = Mock()
+        mock_agent.get_cache_for_batch.return_value = None
+        mock_agent.model = Mock()
+        mock_agent.tokenizer = Mock()
+        mock_agent.layer_devices = {}
+        mock_agent.primary_device = "cpu"
+        
+        results = router._execute_batch_query([mock_agent], "test query")
+        
+        # Should return "No knowledge available." for agents without cache
+        assert len(results) == 1
+        assert "No knowledge" in results[0]
+
+    @patch("src.agent.base.OpenAI")
+    def test_batch_query_multiple_batches(self, mock_openai, mock_openai_config):
+        """Test _batch_query_agents processes multiple batches."""
+        router = Router(openai_config=mock_openai_config, query_batch_size=2)
+        
+        # Create mock agents
+        mock_agents = []
+        for i in range(5):  # 5 agents, batch_size=2 -> 3 batches
+            mock_agent = Mock()
+            mock_agent.query.return_value = f"Response {i}"
+            mock_agent.current_block = Mock()
+            mock_agent.current_block.block_id = f"block_{i}"
+            mock_agents.append(mock_agent)
+        
+        # Mock _execute_batch_query
+        batch_results = [["R0", "R1"], ["R2", "R3"], ["R4"]]
+        call_idx = [0]
+        def mock_execute_batch(agents, query):
+            result = batch_results[call_idx[0]]
+            call_idx[0] += 1
+            return result
+        
+        router._execute_batch_query = mock_execute_batch
+        
+        results = router._batch_query_agents(mock_agents, "test query")
+        
+        assert len(results) == 5
+
+    @patch("src.agent.base.OpenAI")
+    def test_map_reduce_blocks_standalone_mode(self, mock_openai, mock_openai_config):
+        """Test map_reduce_blocks in standalone model mode."""
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_message = Mock()
+        mock_message.content = "<summary_index>0</summary_index>"
+        mock_message.tool_calls = None
+        mock_response.choices = [Mock(message=mock_message)]
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+        
+        router = Router(openai_config=mock_openai_config)
+        
+        mock_agent = Mock()
+        mock_agent.is_active = False
+        mock_agent.summary = "Summary"
+        mock_agent.query.return_value = "Response"
+        mock_agent.preload_cache.return_value = None
+        mock_agent._owns_model = True  # Standalone mode
+        router.add_blocks(mock_agent)
+        
+        result = router.map_reduce_blocks("Test query")
+        
+        assert len(result) == 1
+        assert result[0] == "Response"
+
+    @patch("src.agent.base.OpenAI")
+    def test_map_reduce_blocks_shared_model_sequential(self, mock_openai, mock_openai_config):
+        """Test map_reduce_blocks in shared model mode with batch_size=1."""
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_message = Mock()
+        mock_message.content = "<summary_index>0</summary_index>"
+        mock_message.tool_calls = None
+        mock_response.choices = [Mock(message=mock_message)]
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+        
+        router = Router(
+            openai_config=mock_openai_config,
+            query_batch_size=1,  # Sequential mode
+        )
+        
+        mock_agent = Mock()
+        mock_agent.is_active = False
+        mock_agent.summary = "Summary"
+        mock_agent.query.return_value = "Response"
+        mock_agent.preload_cache.return_value = None
+        mock_agent._owns_model = False  # Shared model
+        mock_agent.current_block = Mock()
+        mock_agent.current_block.block_id = "block_0"
+        router.add_blocks(mock_agent)
+        
+        result = router.map_reduce_blocks("Test query")
+        
+        assert len(result) == 1
+
+    @patch("src.agent.base.OpenAI")
+    def test_map_reduce_blocks_batch_mode(self, mock_openai, mock_openai_config):
+        """Test map_reduce_blocks in batch inference mode."""
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_message = Mock()
+        mock_message.content = "<summary_index>0</summary_index>"
+        mock_message.tool_calls = None
+        mock_response.choices = [Mock(message=mock_message)]
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+        
+        router = Router(
+            openai_config=mock_openai_config,
+            query_batch_size=4,  # Batch mode
+        )
+        
+        mock_agent = Mock()
+        mock_agent.is_active = False
+        mock_agent.summary = "Summary"
+        mock_agent.preload_cache.return_value = None
+        mock_agent._owns_model = False  # Shared model -> batch mode
+        mock_agent.current_block = Mock()
+        mock_agent.current_block.block_id = "block_0"
+        router.add_blocks(mock_agent)
+        
+        # Mock batch query
+        router._batch_query_agents = Mock(return_value=["Batch Response"])
+        
+        result = router.map_reduce_blocks("Test query")
+        
+        assert len(result) == 1
+        router._batch_query_agents.assert_called_once()
+
+    @patch("src.agent.base.OpenAI")
+    def test_map_blocks_parse_exception(self, mock_openai, mock_openai_config):
+        """Test _map_blocks handles parse exceptions gracefully."""
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_message = Mock()
+        # Response that will cause parsing to fail
+        mock_message.content = None  # This will raise AttributeError
+        mock_message.tool_calls = None
+        mock_response.choices = [Mock(message=mock_message)]
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+        
+        router = Router(openai_config=mock_openai_config)
+        
+        mock_agent = Mock()
+        mock_agent.is_active = False
+        mock_agent.summary = "Summary"
+        router.add_blocks(mock_agent)
+        
+        # Should handle exception and return all blocks
+        result = router._map_blocks("Test query")
+        
+        assert len(result) == 1
+
+    @patch("src.agent.base.OpenAI")
+    def test_batch_query_inner_exception(self, mock_openai, mock_openai_config):
+        """Test _batch_query_agents handles inner fallback exceptions."""
+        router = Router(openai_config=mock_openai_config, query_batch_size=2)
+        
+        # Mock agents where fallback also fails
+        mock_agent = Mock()
+        mock_agent.query.side_effect = Exception("Query failed")
+        mock_agent.current_block = Mock()
+        mock_agent.current_block.block_id = "block_0"
+        
+        # Mock _execute_batch_query to fail
+        router._execute_batch_query = Mock(side_effect=Exception("Batch failed"))
+        
+        results = router._batch_query_agents([mock_agent], "test query")
+        
+        assert len(results) == 1
+        assert "[ERROR]" in results[0]
+
+
 class TestRouter:
     """Test Router functionality."""
 

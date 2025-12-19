@@ -17,12 +17,13 @@
 ## 🌟 Features
 
 - **Dual Storage Modes**: KV Cache (GPU) and Text Storage (API-based)
-- **No Traditional RAG**: Avoids embedding-based search inaccuracies
+- **Hybrid Router**: Three-part scoring system combining embedding similarity and BM25 keyword matching
 - **Full Context Understanding**: LLM sees complete memory, not fragments
 - **KV Cache Reuse**: Cached context for efficient memory access
 - **Scalable Architecture**: Parallel agents handle growing memory
 - **Pydantic Validation**: Type-safe configuration with schema validation
-- **145 Unit Tests**: Comprehensive test coverage
+- **Multi-language Support**: Chinese text support via jieba tokenizer
+- **Flexible Embeddings**: Supports HuggingFace and OpenAI compatible embedding models
 
 ## 📦 Installation
 
@@ -127,8 +128,22 @@ See [docs/QUICKSTART_TEXT_STORAGE.md](docs/QUICKSTART_TEXT_STORAGE.md) for detai
 | **ChatManager** | KV cache implementation for GPU-based storage |
 | **TextStorageChatManager** | Text-based implementation for API-only deployment |
 | **MemoryHandler** | Orchestrates memory addition and retrieval |
-| **Router** | LLM-based intelligent routing using summaries |
+| **HybridRouter** | Three-part hybrid routing: embedding similarity + BM25 keywords |
+| **Router** | Legacy LLM-based intelligent routing using summaries |
 | **KVBlock/TextBlock** | Storage backends for memory persistence |
+
+### Hybrid Router
+
+The HybridRouter uses a three-part scoring system for accurate memory block selection:
+
+1. **Summary Embedding Similarity** (default: 30%): Matches query against block summaries
+2. **Text Embedding Similarity** (default: 40%): Matches query against chunked original text
+3. **BM25 Keyword Scoring** (default: 30%): Traditional keyword matching with inverted index
+
+**Features:**
+- **Embedding Providers**: HuggingFace (local) or OpenAI compatible APIs
+- **Chinese Support**: Uses jieba tokenizer for Chinese text
+- **Configurable Weights**: Adjust scoring weights via config.yaml
 
 ## ⚙️ Configuration
 
@@ -155,6 +170,15 @@ memory:
   max_concurrent_gpu_operations: 2
   max_memory_segments: 5        # Max segments returned per query (optional)
   max_blocks: 5                 # Max memory blocks selected by router
+  router_type: "hybrid"         # "hybrid" (recommended) or "llm" (legacy)
+  
+  # Hybrid router settings
+  hybrid_router:
+    embedding_provider: "huggingface"  # huggingface or openai
+    summary_weight: 0.3         # Weight for summary embedding similarity
+    text_weight: 0.4            # Weight for text embedding similarity
+    bm25_weight: 0.3            # Weight for BM25 keyword matching
+    bm25_use_jieba: true        # Chinese text support
 
 max_memory:
   0: "20GB"

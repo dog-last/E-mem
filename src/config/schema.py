@@ -32,6 +32,89 @@ class ModelConfig(BaseModel):
     )
 
 
+class HybridRouterConfig(BaseModel):
+    """Hybrid router configuration."""
+
+    # Embedding settings
+    embedding_provider: Literal["huggingface", "openai"] = Field(
+        default="huggingface",
+        description="Embedding model provider. 'huggingface' uses sentence-transformers, "
+        "'openai' uses OpenAI-compatible embedding APIs.",
+    )
+    embedding_model: Optional[str] = Field(
+        default=None,
+        description="Embedding model name. Default: 'sentence-transformers/all-MiniLM-L6-v2' "
+        "for HuggingFace, 'text-embedding-3-small' for OpenAI.",
+    )
+    embedding_config: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Additional embedding configuration (e.g., api_key, base_url for OpenAI).",
+    )
+
+    # Scoring weights (should sum to 1.0, will be normalized)
+    summary_weight: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Weight for summary embedding similarity score.",
+    )
+    text_weight: float = Field(
+        default=0.4,
+        ge=0.0,
+        le=1.0,
+        description="Weight for text embedding similarity score.",
+    )
+    bm25_weight: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Weight for BM25 keyword matching score.",
+    )
+
+    # Top-k settings for each scoring component
+    summary_top_k: int = Field(
+        default=10, ge=1, description="Top-k summaries to consider for scoring."
+    )
+    text_top_k: int = Field(
+        default=20, ge=1, description="Top-k text chunks to consider for scoring."
+    )
+    bm25_top_k: int = Field(
+        default=10, ge=1, description="Top-k BM25 results to consider."
+    )
+
+    # Text chunking settings
+    text_chunk_size: int = Field(
+        default=512, ge=100, description="Maximum chunk size for text embedding (characters)."
+    )
+    text_chunk_overlap: int = Field(
+        default=50, ge=0, description="Overlap between text chunks (characters)."
+    )
+
+    # Fallback setting
+    use_llm_fallback: bool = Field(
+        default=False,
+        description="Use LLM-based routing as fallback when embedding fails.",
+    )
+
+    # BM25 tokenizer settings
+    bm25_use_jieba: bool = Field(
+        default=True,
+        description="Use jieba tokenizer for Chinese text support in BM25. "
+        "Set to False if your corpus is English-only for slightly better performance.",
+    )
+
+    # BM25 boost threshold for auto-selection
+    bm25_boost_threshold: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="If a block's normalized BM25 score exceeds this threshold (0-1), "
+        "it will be auto-selected regardless of combined score. "
+        "Useful for exact keyword matches. Set to None to disable. "
+        "Recommended: 0.7-0.9 for strict keyword matching.",
+    )
+
+
 class MemoryConfig(BaseModel):
     """Memory system configuration."""
 
@@ -91,8 +174,21 @@ class MemoryConfig(BaseModel):
     )
     enable_router: bool = Field(
         default=True,
-        description="Enable LLM-based router for selecting relevant blocks. "
+        description="Enable router for selecting relevant blocks. "
         "Set to False to query ALL blocks directly (useful for evaluation/debugging).",
+    )
+
+    # Router type selection
+    router_type: Literal["llm", "hybrid"] = Field(
+        default="hybrid",
+        description="Router type: 'llm' for LLM-based routing (legacy), "
+        "'hybrid' for embedding + BM25 hybrid routing (recommended).",
+    )
+
+    # Hybrid router configuration
+    hybrid_router: HybridRouterConfig = Field(
+        default_factory=HybridRouterConfig,
+        description="Configuration for hybrid router (only used when router_type='hybrid').",
     )
 
     @field_validator("overlap_ratio")

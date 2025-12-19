@@ -2,7 +2,7 @@
 
 # Model settings
 model:
-  model_id: "Qwen/Qwen3-4B-Instruct-2507"
+  model_id: "Qwen/Qwen3-4B"
   openai_config: {
     "api_key":"your api-key here",
     "base_url":"the base url here",
@@ -23,7 +23,7 @@ memory:
   overlap_mode: "token"  # "chunk" or "token" - overlap handling strategy
   block_size_ratio: 0.125
   max_concurrent_gpu_operations: 2  # Number of concurrent GPU operations for parallel queries
-  max_memory_segments: 5  # Maximum number of memory segments to return in query response
+  max_memory_segments: 8  # Maximum number of memory segments to return in query response
   max_blocks: 5  # Maximum number of memory blocks to select by the router
   
   # Resource control for batch inference
@@ -34,6 +34,41 @@ memory:
   query_batch_size: 4  # Batch queries together for true GPU parallelism
   max_parallel_cache_loads: 8  # Maximum parallel KV cache loads to GPU
   enable_router: true  # Set to false to query ALL blocks without LLM routing (for evaluation)
+  
+  # Router type: "hybrid" (recommended) or "llm" (legacy LLM-based routing)
+  router_type: "hybrid"
+  
+  # Hybrid router configuration (only used when router_type="hybrid")
+  hybrid_router:
+    # Embedding model settings
+    embedding_provider: "huggingface"  # "huggingface" or "openai"
+    embedding_model: null  # Default: sentence-transformers/all-MiniLM-L6-v2
+    embedding_config: null
+    
+    # Scoring weights (will be normalized to sum to 1.0)
+    summary_weight: 0.3    # Weight for summary embedding similarity
+    text_weight: 0.4       # Weight for text chunk embedding similarity  
+    bm25_weight: 0.3       # Weight for BM25 keyword matching
+    
+    # Top-k settings for each scoring component
+    summary_top_k: 10      # Top-k summaries to consider
+    text_top_k: 20         # Top-k text chunks to consider
+    bm25_top_k: 10         # Top-k BM25 results to consider
+    
+    # Text chunking settings for embedding
+    text_chunk_size: 512   # Max chunk size in characters
+    text_chunk_overlap: 50 # Overlap between chunks in characters
+    
+    # Fallback to LLM routing when embedding fails
+    use_llm_fallback: false
+    
+    # BM25 tokenizer: use jieba for Chinese text support
+    # Set to false for English-only datasets like LOCOMO
+    bm25_use_jieba: false
+    
+    # BM25 boost threshold: auto-select blocks with high keyword match
+    # Set to null to disable. Recommended: 0.7-0.9 for strict keyword matching.
+    bm25_boost_threshold: 0.4
 
 # HotpotQA Evaluation settings
 hotpotqa_eval:

@@ -128,28 +128,25 @@ Instructions:
     * If the answer is a place, output only the location name.
     * If the answer is a list, separate items with commas.
     * If the question asks "yes or no", output "yes" or "no".
+5. **Note**: ALWAYS DIRECTLY OUTPUT the SHORT ANSWER.
 
 Output Format:
-Reasoning: [Brief step-by-step deduction]
-Final Answer: [The concise answer string]
+[The concise answer string]
 
 Example 1:
 Context: The 2008 film "Iron Man" stars Robert Downey Jr. as Tony Stark.
 Question: Who played Tony Stark in Iron Man?
-Reasoning: The context states Robert Downey Jr. played Tony Stark.
-Final Answer: Robert Downey Jr.
+Output: Robert Downey Jr.
 
 Example 2:
 Context: The Beatles were formed in Liverpool in 1960.
 Question: In which city were The Beatles formed?
-Reasoning: The context explicitly mentions Liverpool.
-Final Answer: Liverpool
+Output: Liverpool
 
 Example 3:
 Context: John is taller than Bill. Bill is taller than Dave.
 Question: Is John taller than Dave?
-Reasoning: Transitive property: John > Bill > Dave.
-Final Answer: yes
+Output: yes
 
 Question: {question}
 

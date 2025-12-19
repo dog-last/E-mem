@@ -264,7 +264,7 @@ class TestQueryHandler:
     
     def test_init(self, mock_openai_config):
         """Test QueryHandler initialization."""
-        with patch("src.memory.core.loop_handler.Router"):
+        with patch("src.memory.core.loop_handler.HybridRouter"):
             mock_router = Mock()
             handler = QueryHandler(router=mock_router)
             
@@ -297,7 +297,7 @@ class TestMemoryHandler:
     
     @patch("src.memory.core.loop_handler.clear_metadata")
     @patch("src.memory.core.loop_handler.clear_kv_cache")
-    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.HybridRouter")
     @patch("src.memory.core.loop_handler.AddHandler")
     def test_init(self, mock_add_handler, mock_router, mock_clear_kv, mock_clear_meta, mock_openai_config):
         """Test MemoryHandler initialization."""
@@ -312,7 +312,7 @@ class TestMemoryHandler:
         mock_clear_kv.assert_called_once()
         mock_clear_meta.assert_called_once()
     
-    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.HybridRouter")
     @patch("src.memory.core.loop_handler.AddHandler")
     def test_add_memory_active(self, mock_add_handler_class, mock_router):
         """Test adding memory when agent stays active."""
@@ -328,7 +328,7 @@ class TestMemoryHandler:
     
     @patch("src.memory.core.loop_handler.save_agents_metadata")
     @patch("src.memory.core.loop_handler.load_agents_metadata")
-    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.HybridRouter")
     @patch("src.memory.core.loop_handler.AddHandler")
     def test_add_memory_becomes_inactive(self, mock_add_handler_class, mock_router_class, mock_load_meta, mock_save_meta):
         """Test adding memory when agent becomes inactive."""
@@ -377,7 +377,7 @@ class TestMemoryHandler:
         if 'EVAL_SESSION_ID' in os.environ:
             del os.environ['EVAL_SESSION_ID']
     
-    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.HybridRouter")
     @patch("src.memory.core.loop_handler.AddHandler")
     def test_query_memory_both_sources(self, mock_add_handler_class, mock_router_class):
         """Test querying memory from both old and new sources."""
@@ -400,7 +400,7 @@ class TestMemoryHandler:
         assert "Old memory" in result
         assert "New memory" in result
     
-    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.HybridRouter")
     @patch("src.memory.core.loop_handler.AddHandler")
     def test_query_memory_no_memory(self, mock_add_handler_class, mock_router_class):
         """Test querying when no memory exists."""
@@ -421,7 +421,7 @@ class TestMemoryHandler:
         
         assert result == "No memory found."
     
-    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.HybridRouter")
     @patch("src.memory.core.loop_handler.AddHandler")
     def test_query_memory_only_old(self, mock_add_handler_class, mock_router_class):
         """Test querying with only old memory."""
@@ -442,7 +442,7 @@ class TestMemoryHandler:
         
         assert result == "Old memory content"
     
-    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.HybridRouter")
     @patch("src.memory.core.loop_handler.AddHandler")
     def test_query_memory_only_new(self, mock_add_handler_class, mock_router_class):
         """Test querying with only new memory."""
@@ -465,7 +465,7 @@ class TestMemoryHandler:
     
     @patch("src.memory.core.loop_handler.clear_metadata")
     @patch("src.memory.core.loop_handler.clear_kv_cache")
-    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.HybridRouter")
     @patch("src.memory.core.loop_handler.AddHandler")
     def test_init_no_clean_cache(self, mock_add_handler, mock_router, mock_clear_kv, mock_clear_meta):
         """Test initialization without cleaning cache."""
@@ -478,7 +478,7 @@ class TestMemoryHandler:
         mock_clear_kv.assert_not_called()
         mock_clear_meta.assert_not_called()
     
-    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.HybridRouter")
     @patch("src.memory.core.loop_handler.AddHandler")
     def test_init_with_custom_router_prompt(self, mock_add_handler, mock_router_class):
         """Test initialization with custom router prompt."""
@@ -494,7 +494,7 @@ class TestMemoryHandler:
     
     @patch("src.memory.core.loop_handler.clear_metadata")
     @patch("src.memory.core.loop_handler.clear_kv_cache")
-    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.HybridRouter")
     @patch("src.memory.core.loop_handler.AddHandler")
     def test_init_with_overlap_mode(self, mock_add_handler_class, mock_router_class, mock_clear_kv, mock_clear_meta):
         """Test initialization with overlap_mode parameter."""
@@ -519,7 +519,7 @@ class TestMemoryHandler:
 
     @patch("src.memory.core.loop_handler.save_agents_metadata")
     @patch("src.memory.core.loop_handler.load_agents_metadata")
-    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.HybridRouter")
     @patch("src.memory.core.loop_handler.AddHandler")
     def test_add_memory_with_overlap_token_mode(
         self, mock_add_handler_class, mock_router_class, mock_load_meta, mock_save_meta
@@ -571,7 +571,7 @@ class TestMemoryHandler:
 
     @patch("src.memory.core.loop_handler.save_agents_metadata")
     @patch("src.memory.core.loop_handler.load_agents_metadata")
-    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.HybridRouter")
     @patch("src.memory.core.loop_handler.AddHandler")
     def test_add_memory_with_overlap_chunk_mode(
         self, mock_add_handler_class, mock_router_class, mock_load_meta, mock_save_meta
@@ -625,7 +625,7 @@ class TestMemoryHandler:
 
     @patch("src.memory.core.loop_handler.save_agents_metadata")
     @patch("src.memory.core.loop_handler.load_agents_metadata")
-    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.HybridRouter")
     @patch("src.memory.core.loop_handler.AddHandler")
     def test_add_memory_already_inactive_agent(
         self, mock_add_handler_class, mock_router_class, mock_load_meta, mock_save_meta
@@ -677,7 +677,7 @@ class TestMemoryHandler:
         if 'EVAL_SESSION_ID' in os.environ:
             del os.environ['EVAL_SESSION_ID']
 
-    @patch("src.memory.core.loop_handler.Router")
+    @patch("src.memory.core.loop_handler.HybridRouter")
     @patch("src.memory.core.loop_handler.AddHandler")
     def test_init_with_memory_segment_params(self, mock_add_handler, mock_router_class):
         """Test initialization with max_memory_segments and max_blocks."""

@@ -81,3 +81,17 @@ class TextMemoryAgent:
         
         prompt = f"{all_text}\n\nBased on the context information provided above, please extract the original information that is relevant to the question (REMEMBER to give EXACT datetime along with information, and the datetime format is 'YYYY-MM-DD HH:MM:SS'):\n{question}"
         return self.llm.generate_response(prompt, max_tokens=max_new_tokens)
+
+    def get_original_texts(self) -> List[str]:
+        """
+        Get original text chunks for hybrid routing.
+        
+        Returns:
+            List of original text chunks stored in this block.
+        """
+        return [chunk['text'] for chunk in self.current_block.chunks]
+
+    @property
+    def original_texts(self) -> List[str]:
+        """Property alias for get_original_texts for compatibility."""
+        return self.get_original_texts()

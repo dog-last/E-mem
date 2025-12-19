@@ -14,6 +14,7 @@ from src.memory.kv_block_manager.metadata import (
     save_agents_metadata,
 )
 from src.memory.memory_agent.agent import MemoryAgent
+from src.memory.router.hybrid_router import HybridRouter
 from src.memory.router.router import Router
 
 logger = logging.getLogger(__name__)
@@ -297,6 +298,10 @@ class MemoryHandler:
         query_batch_size: int = 4,
         max_parallel_cache_loads: int = 8,
         enable_router: bool = True,
+        # Router type selection
+        router_type: str = "hybrid",
+        # Hybrid router configuration
+        hybrid_router_config: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize MemoryHandler.
@@ -319,10 +324,12 @@ class MemoryHandler:
             max_blocks: Max blocks to query.
             query_batch_size: Queries to batch together.
             max_parallel_cache_loads: Max parallel KV cache loads.
-            enable_router: If False, query ALL blocks without LLM routing.
+            enable_router: If False, query ALL blocks without routing.
+            router_type: Router type ('llm' or 'hybrid').
+            hybrid_router_config: Configuration for hybrid router.
         """
         logger.info(
-            f"Initializing MemoryHandler with model: {model_id}, overlap_ratio: {overlap_ratio}"
+            f"Initializing MemoryHandler with model: {model_id}, overlap_ratio: {overlap_ratio}, router_type: {router_type}"
         )
         self.model_id = model_id
         self.model_context_window = model_context_window
@@ -348,19 +355,52 @@ class MemoryHandler:
         )
         self.inactive_memory_agents: List[MemoryAgent] = []
 
-        # Create router with memory segment and block limits
-        router_kwargs: Dict[str, Any] = {
-            "openai_config": openai_config,
-            "max_memory_segments": max_memory_segments,
-            "max_blocks": max_blocks,
-            "max_parallel_cache_loads": max_parallel_cache_loads,
-            "query_batch_size": query_batch_size,
-            "enable_router": enable_router,
-        }
-        if router_system_prompt is not None:
-            router_kwargs["system_prompt"] = router_system_prompt
+        # Create router based on router_type
+        if router_type == "hybrid":
+            # Use hybrid router (embedding + BM25)
+            hybrid_config = hybrid_router_config or {}
+            router_kwargs: Dict[str, Any] = {
+                "openai_config": openai_config,
+                "max_memory_segments": max_memory_segments,
+                "max_blocks": max_blocks,
+                "max_parallel_cache_loads": max_parallel_cache_loads,
+                "query_batch_size": query_batch_size,
+                "enable_router": enable_router,
+                # Hybrid router specific settings
+                "embedding_provider": hybrid_config.get("embedding_provider", "huggingface"),
+                "embedding_model": hybrid_config.get("embedding_model"),
+                "embedding_config": hybrid_config.get("embedding_config"),
+                "summary_weight": hybrid_config.get("summary_weight", 0.3),
+                "text_weight": hybrid_config.get("text_weight", 0.4),
+                "bm25_weight": hybrid_config.get("bm25_weight", 0.3),
+                "summary_top_k": hybrid_config.get("summary_top_k", 10),
+                "text_top_k": hybrid_config.get("text_top_k", 20),
+                "bm25_top_k": hybrid_config.get("bm25_top_k", 10),
+                "text_chunk_size": hybrid_config.get("text_chunk_size", 512),
+                "text_chunk_overlap": hybrid_config.get("text_chunk_overlap", 50),
+                "use_llm_fallback": hybrid_config.get("use_llm_fallback", False),
+                "bm25_use_jieba": hybrid_config.get("bm25_use_jieba", True),
+            }
+            if router_system_prompt is not None:
+                router_kwargs["system_prompt"] = router_system_prompt
+            
+            self.query_handler = QueryHandler(HybridRouter(**router_kwargs))
+            logger.info("Using HybridRouter for memory routing")
+        else:
+            # Use LLM-based router (legacy)
+            router_kwargs = {
+                "openai_config": openai_config,
+                "max_memory_segments": max_memory_segments,
+                "max_blocks": max_blocks,
+                "max_parallel_cache_loads": max_parallel_cache_loads,
+                "query_batch_size": query_batch_size,
+                "enable_router": enable_router,
+            }
+            if router_system_prompt is not None:
+                router_kwargs["system_prompt"] = router_system_prompt
 
-        self.query_handler = QueryHandler(Router(**router_kwargs))
+            self.query_handler = QueryHandler(Router(**router_kwargs))
+            logger.info("Using LLM-based Router for memory routing")
         
         if clean_cache_first:
             logger.info("Clearing KV cache and metadata")
@@ -611,7 +651,8 @@ class MemoryHandler:
                     "saved_chunks": agent.saved_chunks,
                     "chunk_number": agent.chunk_number,
                     "model_id": agent.model_id,
-                    "merged_cache": [(k.cpu(), v.cpu()) for k, v in agent.merged_cache] if agent.merged_cache else None
+                    "merged_cache": [(k.cpu(), v.cpu()) for k, v in agent.merged_cache] if agent.merged_cache else None,
+                    "original_texts": agent.original_texts,  # Store original text for hybrid routing
                 }
                 agent.current_block.save_cache(cache_state, 0)
                 logger.info("Active agent cache saved successfully")

@@ -34,7 +34,47 @@ memory:
   query_batch_size: 2  # Number of queries to batch together for true GPU parallelism
   max_parallel_cache_loads: 4  # Maximum parallel KV cache loads to GPU
   kv_cache_on_gpu: false  # Keep inactive KV caches on GPU (only for high-memory setups)
-  enable_router: true  # Set to false to query ALL blocks without LLM routing (for evaluation)
+  enable_router: true  # Set to false to query ALL blocks without routing (for evaluation)
+  
+  # Router type: "hybrid" (recommended) or "llm" (legacy LLM-based routing)
+  router_type: "hybrid"
+  
+  # Hybrid router configuration (only used when router_type="hybrid")
+  hybrid_router:
+    # Embedding model settings
+    # Provider: "huggingface" (local) or "openai" (API-based)
+    embedding_provider: "huggingface"
+    # Model name (default: sentence-transformers/all-MiniLM-L6-v2 for HuggingFace)
+    embedding_model: null
+    # Additional embedding config (e.g., api_key, base_url for OpenAI)
+    embedding_config: null
+    
+    # Scoring weights (will be normalized to sum to 1.0)
+    summary_weight: 0.3    # Weight for summary embedding similarity
+    text_weight: 0.4       # Weight for text chunk embedding similarity  
+    bm25_weight: 0.3       # Weight for BM25 keyword matching
+    
+    # Top-k settings for each scoring component
+    summary_top_k: 10      # Top-k summaries to consider
+    text_top_k: 20         # Top-k text chunks to consider
+    bm25_top_k: 10         # Top-k BM25 results to consider
+    
+    # Text chunking settings for embedding
+    text_chunk_size: 512   # Max chunk size in characters
+    text_chunk_overlap: 50 # Overlap between chunks in characters
+    
+    # Fallback to LLM routing when embedding fails
+    use_llm_fallback: false
+    
+    # BM25 tokenizer: use jieba for Chinese text support
+    # Set to false if your corpus is English-only
+    bm25_use_jieba: true
+    
+    # BM25 boost threshold: auto-select blocks with high keyword match
+    # If a block's normalized BM25 score exceeds this threshold (0-1),
+    # it will be selected regardless of combined score.
+    # Set to null to disable. Recommended: 0.7-0.9 for strict keyword matching.
+    bm25_boost_threshold: 0.8  # e.g., 0.8
 
 # LoComo Evaluation settings
 locomo_eval:

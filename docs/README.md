@@ -135,6 +135,51 @@ manager = create_chat_manager(
 | `max_concurrent_gpu_operations` | 1-8 | 2 | Parallel GPU operations |
 | `max_memory_segments` | 1-∞ | None | Max segments returned per query (None=unlimited) |
 | `max_blocks` | 1-∞ | 5 | Max memory blocks selected by router |
+| `router_type` | hybrid/llm | hybrid | Router type (hybrid recommended) |
+
+## Hybrid Router Parameters
+
+The hybrid router uses three scoring components for accurate memory block selection:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `embedding_provider` | huggingface | Embedding provider: `huggingface` or `openai` |
+| `embedding_model` | None | Model name (auto-selected if None) |
+| `summary_weight` | 0.3 | Weight for summary embedding similarity |
+| `text_weight` | 0.4 | Weight for text embedding similarity |
+| `bm25_weight` | 0.3 | Weight for BM25 keyword matching |
+| `summary_top_k` | 10 | Top-k summaries to consider |
+| `text_top_k` | 20 | Top-k text chunks to consider |
+| `bm25_top_k` | 10 | Top-k BM25 results |
+| `text_chunk_size` | 512 | Max chunk size for text embedding |
+| `bm25_use_jieba` | true | Use jieba tokenizer for Chinese text |
+
+### Hybrid Router Configuration Example
+
+```yaml
+memory:
+  router_type: "hybrid"
+  hybrid_router:
+    embedding_provider: "huggingface"
+    embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+    summary_weight: 0.3
+    text_weight: 0.4
+    bm25_weight: 0.3
+    bm25_use_jieba: true  # Enable Chinese support
+```
+
+### Using OpenAI Embeddings
+
+```yaml
+memory:
+  router_type: "hybrid"
+  hybrid_router:
+    embedding_provider: "openai"
+    embedding_model: "text-embedding-3-small"
+    embedding_config:
+      api_key: "your-openai-key"
+      base_url: "https://api.openai.com/v1"
+```
 
 ### Query Result Limiting
 

@@ -217,7 +217,7 @@ class TestTextMemoryHandler:
 
     @patch("src.memory.core.text_loop_handler.clear_text_metadata")
     @patch("src.memory.core.text_loop_handler.clear_text_cache")
-    @patch("src.memory.core.text_loop_handler.Router")
+    @patch("src.memory.core.text_loop_handler.HybridRouter")
     @patch("src.memory.core.text_loop_handler.TextAddHandler")
     def test_init_with_clean_cache(
         self, mock_add_handler, mock_router, mock_clear_cache, mock_clear_meta
@@ -235,7 +235,7 @@ class TestTextMemoryHandler:
 
     @patch("src.memory.core.text_loop_handler.clear_text_metadata")
     @patch("src.memory.core.text_loop_handler.clear_text_cache")
-    @patch("src.memory.core.text_loop_handler.Router")
+    @patch("src.memory.core.text_loop_handler.HybridRouter")
     @patch("src.memory.core.text_loop_handler.TextAddHandler")
     def test_init_without_clean_cache(
         self, mock_add_handler, mock_router, mock_clear_cache, mock_clear_meta
@@ -250,7 +250,7 @@ class TestTextMemoryHandler:
         mock_clear_cache.assert_not_called()
         mock_clear_meta.assert_not_called()
 
-    @patch("src.memory.core.text_loop_handler.Router")
+    @patch("src.memory.core.text_loop_handler.HybridRouter")
     @patch("src.memory.core.text_loop_handler.TextAddHandler")
     def test_init_with_router_prompt(self, mock_add_handler, mock_router_class):
         """Test initialization with custom router prompt."""
@@ -263,7 +263,7 @@ class TestTextMemoryHandler:
         call_kwargs = mock_router_class.call_args.kwargs
         assert call_kwargs["system_prompt"] == "Custom prompt"
 
-    @patch("src.memory.core.text_loop_handler.Router")
+    @patch("src.memory.core.text_loop_handler.HybridRouter")
     @patch("src.memory.core.text_loop_handler.TextAddHandler")
     def test_init_with_memory_segment_params(self, mock_add_handler, mock_router_class):
         """Test initialization with max_memory_segments and max_blocks."""
@@ -278,7 +278,7 @@ class TestTextMemoryHandler:
         assert call_kwargs["max_memory_segments"] == 10
         assert call_kwargs["max_blocks"] == 8
 
-    @patch("src.memory.core.text_loop_handler.Router")
+    @patch("src.memory.core.text_loop_handler.HybridRouter")
     @patch("src.memory.core.text_loop_handler.TextAddHandler")
     def test_init_with_enable_router_true(self, mock_add_handler, mock_router_class):
         """Test initialization with enable_router=True (default)."""
@@ -291,7 +291,7 @@ class TestTextMemoryHandler:
         call_kwargs = mock_router_class.call_args.kwargs
         assert call_kwargs["enable_router"] is True
 
-    @patch("src.memory.core.text_loop_handler.Router")
+    @patch("src.memory.core.text_loop_handler.HybridRouter")
     @patch("src.memory.core.text_loop_handler.TextAddHandler")
     def test_init_with_enable_router_false(self, mock_add_handler, mock_router_class):
         """Test initialization with enable_router=False."""
@@ -304,7 +304,7 @@ class TestTextMemoryHandler:
         call_kwargs = mock_router_class.call_args.kwargs
         assert call_kwargs["enable_router"] is False
 
-    @patch("src.memory.core.text_loop_handler.Router")
+    @patch("src.memory.core.text_loop_handler.HybridRouter")
     @patch("src.memory.core.text_loop_handler.TextAddHandler")
     def test_init_router_disabled_no_config(self, mock_add_handler, mock_router_class):
         """Test initialization with enable_router=False and no openai_config."""
@@ -320,7 +320,7 @@ class TestTextMemoryHandler:
         assert call_kwargs["openai_config"] is None
 
     @patch("src.memory.core.text_loop_handler.save_text_agents_metadata")
-    @patch("src.memory.core.text_loop_handler.Router")
+    @patch("src.memory.core.text_loop_handler.HybridRouter")
     @patch("src.memory.core.text_loop_handler.TextAddHandler")
     def test_add_memory_creates_agent(
         self, mock_add_handler_class, mock_router, mock_save_meta
@@ -352,7 +352,7 @@ class TestTextMemoryHandler:
         mock_add_handler.add_memory.assert_called_once_with("Test memory")
 
     @patch("src.memory.core.text_loop_handler.save_text_agents_metadata")
-    @patch("src.memory.core.text_loop_handler.Router")
+    @patch("src.memory.core.text_loop_handler.HybridRouter")
     @patch("src.memory.core.text_loop_handler.TextAddHandler")
     def test_add_memory_agent_becomes_inactive(
         self, mock_add_handler_class, mock_router_class, mock_save_meta
@@ -398,7 +398,7 @@ class TestTextMemoryHandler:
         mock_router.add_blocks.assert_called_once_with(mock_agent)
         mock_add_handler.create_agent.assert_called()
 
-    @patch("src.memory.core.text_loop_handler.Router")
+    @patch("src.memory.core.text_loop_handler.HybridRouter")
     @patch("src.memory.core.text_loop_handler.TextAddHandler")
     def test_query_memory_both_sources(self, mock_add_handler_class, mock_router_class):
         """Test query with both old and new memory."""
@@ -420,7 +420,7 @@ class TestTextMemoryHandler:
 
         assert "Old memory" in result or "New memory" in result
 
-    @patch("src.memory.core.text_loop_handler.Router")
+    @patch("src.memory.core.text_loop_handler.HybridRouter")
     @patch("src.memory.core.text_loop_handler.TextAddHandler")
     def test_query_memory_no_memory(self, mock_add_handler_class, mock_router_class):
         """Test query with no memory."""
@@ -438,7 +438,7 @@ class TestTextMemoryHandler:
 
         assert result == "No memory found."
 
-    @patch("src.memory.core.text_loop_handler.Router")
+    @patch("src.memory.core.text_loop_handler.HybridRouter")
     @patch("src.memory.core.text_loop_handler.TextAddHandler")
     def test_query_memory_only_old(self, mock_add_handler_class, mock_router_class):
         """Test query with only old memory."""
@@ -456,7 +456,7 @@ class TestTextMemoryHandler:
 
         assert result == "Old memory content"
 
-    @patch("src.memory.core.text_loop_handler.Router")
+    @patch("src.memory.core.text_loop_handler.HybridRouter")
     @patch("src.memory.core.text_loop_handler.TextAddHandler")
     def test_query_memory_only_new(self, mock_add_handler_class, mock_router_class):
         """Test query with only new memory."""

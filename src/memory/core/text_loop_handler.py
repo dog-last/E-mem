@@ -1,6 +1,6 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from typing import List
+from typing import Any, Dict, List, Optional
 
 from src.memory.kv_block_manager.text_block import (
     clear_text_cache,
@@ -9,6 +9,7 @@ from src.memory.kv_block_manager.text_block import (
     save_text_agents_metadata,
 )
 from src.memory.memory_agent.text_agent import TextMemoryAgent
+from src.memory.router.hybrid_router import HybridRouter
 from src.memory.router.router import Router
 
 logger = logging.getLogger(__name__)
@@ -145,13 +146,17 @@ class TextMemoryHandler:
         openai_config: dict,
         clean_cache_first: bool = True,
         model_context_window: int = 32768,
-        router_system_prompt: str = None,
+        router_system_prompt: Optional[str] = None,
         overlap_ratio: float = 0.1,
         overlap_mode: str = "chunk",
         block_size_ratio: float = 0.125,
-        max_memory_segments: int = None,
+        max_memory_segments: Optional[int] = None,
         max_blocks: int = 5,
         enable_router: bool = True,
+        # Router type selection
+        router_type: str = "hybrid",
+        # Hybrid router configuration
+        hybrid_router_config: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize TextMemoryHandler.
@@ -167,9 +172,11 @@ class TextMemoryHandler:
             block_size_ratio: Block size relative to context window.
             max_memory_segments: Maximum memory segments per query.
             max_blocks: Maximum number of blocks to query.
-            enable_router: If False, query ALL blocks without LLM routing.
+            enable_router: If False, query ALL blocks without routing.
+            router_type: Router type ('llm' or 'hybrid').
+            hybrid_router_config: Configuration for hybrid router.
         """
-        logger.info(f"Initializing TextMemoryHandler with model: {model_id}")
+        logger.info(f"Initializing TextMemoryHandler with model: {model_id}, router_type: {router_type}")
         self.model_id = model_id
         self.openai_config = openai_config
         self.model_context_window = model_context_window
@@ -182,19 +189,50 @@ class TextMemoryHandler:
             overlap_mode,
             block_size_ratio,
         )
-        self.inactive_memory_agents = []
+        self.inactive_memory_agents: List[TextMemoryAgent] = []
 
-        # Create router with memory segment and block limits
-        router_kwargs = {
-            "openai_config": openai_config,
-            "max_memory_segments": max_memory_segments,
-            "max_blocks": max_blocks,
-            "enable_router": enable_router,
-        }
-        if router_system_prompt is not None:
-            router_kwargs["system_prompt"] = router_system_prompt
+        # Create router based on router_type
+        if router_type == "hybrid":
+            # Use hybrid router (embedding + BM25)
+            hybrid_config = hybrid_router_config or {}
+            router_kwargs: Dict[str, Any] = {
+                "openai_config": openai_config,
+                "max_memory_segments": max_memory_segments,
+                "max_blocks": max_blocks,
+                "enable_router": enable_router,
+                # Hybrid router specific settings
+                "embedding_provider": hybrid_config.get("embedding_provider", "huggingface"),
+                "embedding_model": hybrid_config.get("embedding_model"),
+                "embedding_config": hybrid_config.get("embedding_config"),
+                "summary_weight": hybrid_config.get("summary_weight", 0.3),
+                "text_weight": hybrid_config.get("text_weight", 0.4),
+                "bm25_weight": hybrid_config.get("bm25_weight", 0.3),
+                "summary_top_k": hybrid_config.get("summary_top_k", 10),
+                "text_top_k": hybrid_config.get("text_top_k", 20),
+                "bm25_top_k": hybrid_config.get("bm25_top_k", 10),
+                "text_chunk_size": hybrid_config.get("text_chunk_size", 512),
+                "text_chunk_overlap": hybrid_config.get("text_chunk_overlap", 50),
+                "use_llm_fallback": hybrid_config.get("use_llm_fallback", False),
+                "bm25_use_jieba": hybrid_config.get("bm25_use_jieba", True),
+            }
+            if router_system_prompt is not None:
+                router_kwargs["system_prompt"] = router_system_prompt
+            
+            self.query_handler = TextQueryHandler(HybridRouter(**router_kwargs))
+            logger.info("Using HybridRouter for memory routing")
+        else:
+            # Use LLM-based router (legacy)
+            router_kwargs = {
+                "openai_config": openai_config,
+                "max_memory_segments": max_memory_segments,
+                "max_blocks": max_blocks,
+                "enable_router": enable_router,
+            }
+            if router_system_prompt is not None:
+                router_kwargs["system_prompt"] = router_system_prompt
 
-        self.query_handler = TextQueryHandler(Router(**router_kwargs))
+            self.query_handler = TextQueryHandler(Router(**router_kwargs))
+            logger.info("Using LLM-based Router for memory routing")
         
         if clean_cache_first:
             logger.info("Clearing text cache and metadata")
