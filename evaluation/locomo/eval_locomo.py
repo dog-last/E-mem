@@ -257,17 +257,19 @@ Analyze the `Question` text provided at the bottom.
     * If the exact answer is missing, you **MUST infer** the most reasonable date/duration from the context and format it.
 2.  **CLEAN OUTPUT:** Output **ONLY** the final string. No intro text, no punctuation (periods) at the end."""
             elif qa.category == 1:  # Fact Retrieval/General
-                instructions = """Based on the text below, analyze the context to provide the best answer to the question.
+                instructions = """
+                 Based on the text below, analyze the context to provide the best answer to the question.
 
 ### PROCESS
 1. **Understand:** Fully grasp the specific details requested by the question.
 2. **Reason:** Analyze the text in relation to the question to infer or locate the correct answer.
-3. **Extract:** Formulate the final answer using the **exact wording and terminology** directly from the text.
-
+3. **Extract:** Formulate the final answer using the **exact wording and terminology** directly from the context whenever possible.
+4.   For questions that require answering a date or time, strictly follow the format \"15 July 2023\" and provide a specific date whenever possible. For example, if you need to answer \"last year,\" give the specific year of last year rather than just saying \"last year.\" .
 ### CRITICAL CONSTRAINTS
 * **Strict Relevance:** **NEVER** output content unrelated to the question. Focus ONLY on the specific details requested.
 * **Anti-Refusal:** **NEVER** say "not mentioned". Even if the answer is not explicitly stated, you **MUST** infer the **most probable answer** based on the provided evidence.
-* **Format:** The final OUTPUT must be a **short phrase** (under 10 words). NO sentences."""
+* **Format:** The final OUTPUT must be a **short phrase** (under 10 words). NO sentences.
+"""
             elif qa.category == 3:  # Analysis/Inference Questions
                 instructions = """Based on the text below, write an answer in the form of **a short phrase** for the following question, not a sentence.
 ### CRITICAL: CONDITIONAL FORMATTING
@@ -285,14 +287,19 @@ Analyze the `Question` text provided at the bottom.
 * **ALWAYS** infer the best possible answer based on available evidence."""
             elif qa.category == 4:
                 # Detailed question
-                instructions = """You are an extractive QA assistant. Your goal is to extract the exact answer substring from the text.
-
+                instructions = """
+        You are an extractive QA assistant. Your goal is to extract the exact answer substring from the text.
 INSTRUCTIONS:
 1. Locate the exact answer in the TEXT.
 2. Output **ONLY** the key entity, date, name, or short phrase representing the answer.
 3. **DO NOT** use full sentences. **DO NOT** add filler words like "The answer is", "a", "the", "she is".
-4. Keep it as short as possible (ideally 1-5 words).
-5. Use the EXACT wording from the text if possible."""
+4. Keep it as short as possible (ideally less than 10 words).
+5. Use the EXACT wording from the text if possible.
+* **Format:** The final OUTPUT must be a **short phrase** (under 10 words).
+        
+"""
+# Based on the cotext given, write an answer in the form of **a short phrase** for the following question, not a sentence. Answer with exact words from the context whenever possible.      
+#         **Format:** The final OUTPUT must be a **short phrase**.
             else:
                 # Other categories
                 instructions = """Use DATE of CONVERSATION to answer with an approximate date. Write an answer in the form of a short phrase. Answer with exact words from the context whenever possible. Short answer:"""
@@ -306,22 +313,31 @@ INSTRUCTIONS:
                 logger.info(f"Research summary: {research_summary[:200]}...")
                 
                 # 2. Build final prompt for working model
-                prompt = f"""You are an expert at answering questions based on conversation history.
+#                 prompt = f"""You are an expert at answering questions based on conversation history.
 
-Instructions:
-{instructions}
+# Instructions:
+# {instructions}
 
-Question: {qa.question}
+# Question: {qa.question}
 
-Context:
-{research_summary}
-"""
+# Context:
+# {research_summary}
+# """
+                system_content = f"""You are an expert at answering questions based on conversation history.
+                                        Instructions:{instructions}"""
+                user_content = f"""Question: {qa.question}
+
+                                Context:{research_summary}"""
                 # 3. Generate final answer using working model
                 logger.info("Generating final answer...")
                 response = working_client.chat.completions.create(
                     model=working_model,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.3,
+                    # messages=[{"role": "user", "content": prompt}],
+                    messages=[
+                                {"role": "system", "content": system_content},
+                                {"role": "user", "content": user_content}
+                            ],
+                    temperature=0,
                     max_tokens=256
                 )
                 prediction = response.choices[0].message.content.strip()

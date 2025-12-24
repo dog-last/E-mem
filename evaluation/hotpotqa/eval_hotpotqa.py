@@ -128,7 +128,7 @@ Instructions:
     * If the answer is a place, output only the location name.
     * If the answer is a list, separate items with commas.
     * If the question asks "yes or no", output "yes" or "no".
-5. **Note**: ALWAYS DIRECTLY OUTPUT the SHORT ANSWER.
+5. **Note**: ALWAYS DIRECTLY OUTPUT the SHORT ANSWER not a sentence.
 
 Output Format:
 [The concise answer string]
