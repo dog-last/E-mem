@@ -6,6 +6,7 @@ KV-Cached Memory Agent + HotpotQA Dataset Evaluation
 Adapted from GAM Framework to use KV-Cached Memory Agent System
 """
 
+import gc
 import json
 import logging
 import os
@@ -19,11 +20,57 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import tiktoken
+import torch
+from openai import OpenAI
 from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from src.conversation_manager.factory import create_chat_manager
+
+
+# hotpotqa needs more careful management of cuda memory, in case of OOM errors
+def force_cleanup_gpu_memory():
+    """
+    Force cleanup of GPU memory more aggressively.
+    This includes clearing transformers caches and CUDA contexts.
+    """
+    # 1. Clear Python garbage first
+    gc.collect()
+    gc.collect()
+    gc.collect()
+    
+    # 2. Clear transformers internal caches if available
+    try:
+        import transformers
+        if hasattr(transformers, 'utils') and hasattr(transformers.utils, 'hub'):
+            # Clear download cache references (won't delete files)
+            pass
+    except Exception:
+        pass
+    
+    # 3. Clear any sentence_transformers cache
+    try:
+        pass
+        # SentenceTransformer uses its own cache
+    except Exception:
+        pass
+    
+    # 4. CUDA cleanup
+    if torch.cuda.is_available():
+        # Synchronize all streams
+        torch.cuda.synchronize()
+        
+        # Empty cache
+        torch.cuda.empty_cache()
+        
+        # Reset memory stats
+        torch.cuda.reset_peak_memory_stats()
+        
+        # Additional: try to reset accumulated state
+        for i in range(torch.cuda.device_count()):
+            with torch.cuda.device(i):
+                torch.cuda.empty_cache()
 
 # ========== Logging Setup ==========
 
@@ -219,6 +266,8 @@ def process_sample(
     logger.info(f"Processing sample #{sample_index}: {sample_id}")
     logger.info(f"{'='*60}")
     
+    agent = None  # Initialize agent to None for proper cleanup in finally block
+    
     try:
         # 1. Build context chunks
         context_chunks = build_context_chunks_for_sample(sample, max_tokens, logger)
@@ -296,8 +345,7 @@ def process_sample(
             logger.info("Generating final answer...")
             prompt = make_prompt(research_summary, question)
             
-            # Call working model API
-            from openai import OpenAI
+            # Call working model API (use module-level import)
             working_client = OpenAI(api_key=working_api_key, base_url=working_base_url)
             response = working_client.chat.completions.create(
                 model=working_model,
@@ -344,13 +392,6 @@ def process_sample(
         logger.info(f"F1 score: {result.get('f1', 0.0):.4f}")
         logger.info(f"Result saved to: {sample_results_dir}")
         
-        # Cleanup
-        del agent
-        import torch
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        logger.info("Agent cleaned up")
-        
         return result
         
     except Exception as e:
@@ -362,6 +403,136 @@ def process_sample(
             "sample_id": sample.get("_id", f"sample-{sample_index}"),
             "error": error_msg
         }
+    
+    finally:
+        # CRITICAL: Always cleanup GPU memory regardless of success or failure
+        # This prevents GPU memory leaks between samples
+        if agent is not None:
+            try:
+                logger.info("[CLEANUP] Starting GPU memory cleanup...")
+                
+                # Clear internal references to help garbage collection
+                if hasattr(agent, '_memory_handler'):
+                    handler = agent._memory_handler
+                    logger.info(f"[CLEANUP] Found _memory_handler: {type(handler)}")
+                    
+                    # 1. Clear active agent's merged_cache AND model reference
+                    if hasattr(handler, 'add_handler') and handler.add_handler.active_memory_agent:
+                        active_agent = handler.add_handler.active_memory_agent
+                        logger.info(f"[CLEANUP] Found active_memory_agent, has merged_cache: {hasattr(active_agent, 'merged_cache') and active_agent.merged_cache is not None}")
+                        if hasattr(active_agent, 'merged_cache') and active_agent.merged_cache is not None:
+                            del active_agent.merged_cache
+                            active_agent.merged_cache = None
+                        # CRITICAL: Clear model reference from MemoryAgent
+                        if hasattr(active_agent, 'model'):
+                            logger.info("[CLEANUP] Clearing active_agent.model")
+                            active_agent.model = None
+                        if hasattr(active_agent, 'tokenizer'):
+                            active_agent.tokenizer = None
+                    else:
+                        logger.info(f"[CLEANUP] No active_memory_agent found, has_add_handler={hasattr(handler, 'add_handler')}")
+                    
+                    # 2. Clear inactive agents' references AND model references
+                    if hasattr(handler, 'inactive_memory_agents'):
+                        for inactive_agent in handler.inactive_memory_agents:
+                            if hasattr(inactive_agent, 'merged_cache') and inactive_agent.merged_cache is not None:
+                                del inactive_agent.merged_cache
+                                inactive_agent.merged_cache = None
+                            if hasattr(inactive_agent, '_cpu_cache'):
+                                inactive_agent._cpu_cache = None
+                            # CRITICAL: Clear model reference from each MemoryAgent
+                            if hasattr(inactive_agent, 'model'):
+                                inactive_agent.model = None
+                            if hasattr(inactive_agent, 'tokenizer'):
+                                inactive_agent.tokenizer = None
+                        handler.inactive_memory_agents.clear()
+                    
+                    # 3. Clear HybridRouter's embedding model and cached embeddings FIRST
+                    if hasattr(handler, 'query_handler') and hasattr(handler.query_handler, 'router'):
+                        router = handler.query_handler.router
+                        # Clear agent references in router FIRST
+                        if hasattr(router, 'agent'):
+                            for router_agent in router.agent:
+                                if hasattr(router_agent, 'model'):
+                                    router_agent.model = None
+                                if hasattr(router_agent, 'tokenizer'):
+                                    router_agent.tokenizer = None
+                            router.agent.clear()
+                        # Clear embedding model (SentenceTransformer uses GPU)
+                        if hasattr(router, '_embedding_model') and router._embedding_model is not None:
+                            if hasattr(router._embedding_model, 'model'):
+                                # Move to CPU first to free GPU memory
+                                try:
+                                    router._embedding_model.model.cpu()
+                                except Exception:
+                                    pass
+                                del router._embedding_model.model
+                            del router._embedding_model
+                            router._embedding_model = None
+                        # Clear cached embeddings
+                        if hasattr(router, '_summary_embeddings'):
+                            router._summary_embeddings = None
+                        if hasattr(router, '_text_chunk_embeddings'):
+                            router._text_chunk_embeddings = None
+                        if hasattr(router, '_text_chunks_per_block'):
+                            router._text_chunks_per_block = []
+                        if hasattr(router, '_chunk_to_block_map'):
+                            router._chunk_to_block_map = []
+                        if hasattr(router, '_bm25_scorer'):
+                            router._bm25_scorer = None
+                    
+                    # 4. FINALLY: Clear the shared LLM model from AddHandler
+                    # Must be done AFTER all MemoryAgents have their model references cleared
+                    if hasattr(handler, 'add_handler'):
+                        add_handler = handler.add_handler
+                        logger.info(f"[CLEANUP] Found add_handler, has _shared_model: {hasattr(add_handler, '_shared_model') and add_handler._shared_model is not None}")
+                        if hasattr(add_handler, 'active_memory_agent') and add_handler.active_memory_agent:
+                            if hasattr(add_handler.active_memory_agent, 'model'):
+                                add_handler.active_memory_agent.model = None
+                            add_handler.active_memory_agent = None
+                        if hasattr(add_handler, '_shared_model') and add_handler._shared_model is not None:
+                            # CRITICAL: Move model to CPU first to free GPU memory
+                            # This is more effective than just del
+                            logger.info("[CLEANUP] Moving _shared_model to CPU and deleting...")
+                            try:
+                                add_handler._shared_model.cpu()
+                                logger.info("[CLEANUP] _shared_model moved to CPU")
+                            except Exception as e:
+                                logger.warning(f"[CLEANUP] Failed to move model to CPU: {e}")
+                            del add_handler._shared_model
+                            add_handler._shared_model = None
+                            logger.info("[CLEANUP] _shared_model deleted")
+                        if hasattr(add_handler, '_shared_tokenizer'):
+                            add_handler._shared_tokenizer = None
+                        if hasattr(add_handler, '_shared_layer_devices'):
+                            add_handler._shared_layer_devices = None
+                    else:
+                        logger.warning("[CLEANUP] No add_handler found in handler!")
+                            
+            except Exception as cleanup_error:
+                logger.warning(f"Error during internal cleanup: {cleanup_error}")
+            
+            del agent
+            logger.info("[CLEANUP] agent deleted")
+        
+        # Log memory before gc
+        if torch.cuda.is_available() and logger:
+            allocated_before_gc = torch.cuda.memory_allocated() / 1024**3
+            logger.info(f"[CLEANUP] GPU before gc.collect: allocated={allocated_before_gc:.2f}GB")
+        
+        # Force comprehensive GPU memory cleanup
+        force_cleanup_gpu_memory()
+        
+        # Log GPU memory status for debugging
+        if torch.cuda.is_available() and logger:
+            try:
+                allocated = torch.cuda.memory_allocated() / 1024**3
+                reserved = torch.cuda.memory_reserved() / 1024**3
+                logger.info(f"GPU memory after cleanup: allocated={allocated:.2f}GB, reserved={reserved:.2f}GB")
+            except Exception:
+                pass
+        
+        logger.info("Agent and GPU memory cleaned up")
 
 
 # ========== Main Function ==========
@@ -472,6 +643,12 @@ def main():
         logger.info(f"Starting to process sample {sample_idx}/{len(all_samples)-1}")
         logger.info(f"{'='*80}")
         
+        # Log GPU memory BEFORE processing
+        if torch.cuda.is_available():
+            allocated_before = torch.cuda.memory_allocated() / 1024**3
+            reserved_before = torch.cuda.memory_reserved() / 1024**3
+            logger.info(f"[GPU BEFORE] allocated={allocated_before:.2f}GB, reserved={reserved_before:.2f}GB")
+        
         try:
             result = process_sample(
                 sample, 
@@ -494,6 +671,15 @@ def main():
                 "sample_id": sample.get("_id", f"sample-{sample_idx}"),
                 "error": str(e)
             })
+        
+        # Log GPU memory AFTER processing (should be similar to BEFORE if cleanup is thorough)
+        if torch.cuda.is_available():
+            allocated_after = torch.cuda.memory_allocated() / 1024**3
+            reserved_after = torch.cuda.memory_reserved() / 1024**3
+            logger.info(f"[GPU AFTER] allocated={allocated_after:.2f}GB, reserved={reserved_after:.2f}GB")
+            # Warn if significant memory increase detected
+            if allocated_after - allocated_before > 0.5:  # More than 0.5GB increase
+                logger.warning(f"[WARNING] GPU memory increased by {allocated_after - allocated_before:.2f}GB after sample {sample_idx}")
     
     # Calculate statistics
     f1_scores = [r["f1"] for r in all_results if "f1" in r]
