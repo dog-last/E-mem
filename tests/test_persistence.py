@@ -1,4 +1,7 @@
 """Test KV cache persistence functionality."""
+import os
+import uuid
+
 import pytest
 
 from src.memory.kv_block_manager.metadata import (
@@ -9,25 +12,13 @@ from src.memory.kv_block_manager.metadata import (
 
 
 @pytest.fixture(autouse=True)
-def cleanup():
-    """Cleanup metadata before and after each test."""
-    import os
-
+def cleanup(temp_metadata_dir):
+    """Cleanup metadata before and after each test using temp directory."""
     # Set unique test session_id for each test
-    import uuid
     test_session = f'test_session_{uuid.uuid4().hex[:8]}'
     os.environ['EVAL_SESSION_ID'] = test_session
     
-    # Clear all metadata before test
-    from src.memory.kv_block_manager.metadata import METADATA_FILE
-    if os.path.exists(METADATA_FILE):
-        os.remove(METADATA_FILE)
-    
     yield
-    
-    # Clear all metadata after test
-    if os.path.exists(METADATA_FILE):
-        os.remove(METADATA_FILE)
     
     # Clean up env
     if 'EVAL_SESSION_ID' in os.environ:

@@ -40,8 +40,11 @@ evaluation/hotpotqa/text_data/
 htmlcov/
 .pytest_cache/
 
+# Test temporary data
+tests/test_data/
+
 # Misc
-nohup.out
+nohup*.out
 
 
 # ruff cache

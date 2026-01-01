@@ -419,6 +419,50 @@ class TestChatManager:
         assert call_kwargs["overlap_ratio"] == 0.2
         assert call_kwargs["block_size_ratio"] == 0.25
 
+    @patch("src.conversation_manager.chat_handler.MemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_init_with_router_type_and_hybrid_config(
+        self, mock_openai, mock_memory_handler, mock_openai_config
+    ):
+        """Test ChatManager with router_type and hybrid_router_config."""
+        hybrid_config = {
+            "embedding_provider": "openai",
+            "embedding_model": "text-embedding-3-small",
+            "summary_weight": 0.4,
+            "text_weight": 0.3,
+            "bm25_weight": 0.3,
+            "bm25_use_jieba": False,
+        }
+        
+        chat = ChatManager(
+            model_id="test-model",
+            openai_config=mock_openai_config,
+            router_type="hybrid",
+            hybrid_router_config=hybrid_config,
+        )
+
+        assert chat.name == "chat_manager"
+        call_kwargs = mock_memory_handler.call_args.kwargs
+        assert call_kwargs["router_type"] == "hybrid"
+        assert call_kwargs["hybrid_router_config"] == hybrid_config
+
+    @patch("src.conversation_manager.chat_handler.MemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_init_with_llm_router_type(
+        self, mock_openai, mock_memory_handler, mock_openai_config
+    ):
+        """Test ChatManager with llm router type."""
+        chat = ChatManager(
+            model_id="test-model",
+            openai_config=mock_openai_config,
+            router_type="llm",
+        )
+
+        assert chat.name == "chat_manager"
+        call_kwargs = mock_memory_handler.call_args.kwargs
+        assert call_kwargs["router_type"] == "llm"
+        assert call_kwargs["hybrid_router_config"] is None
+
 
 class TestTextStorageChatManager:
     """Test TextStorageChatManager functionality."""
@@ -498,6 +542,33 @@ class TestTextStorageChatManager:
 
         assert response == "Test response"
         assert chat.handle_user_input == "Hello"
+
+    @patch("src.conversation_manager.chat_handler.TextMemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_init_with_router_type_and_hybrid_config(
+        self, mock_openai, mock_memory_handler, mock_openai_config
+    ):
+        """Test TextStorageChatManager with router_type and hybrid_router_config."""
+        from src.conversation_manager.chat_handler import TextStorageChatManager
+
+        hybrid_config = {
+            "embedding_provider": "huggingface",
+            "summary_weight": 0.3,
+            "text_weight": 0.4,
+            "bm25_weight": 0.3,
+        }
+        
+        chat = TextStorageChatManager(
+            model_id="test-model",
+            openai_config=mock_openai_config,
+            router_type="hybrid",
+            hybrid_router_config=hybrid_config,
+        )
+
+        assert chat.name == "text_chat_manager"
+        call_kwargs = mock_memory_handler.call_args.kwargs
+        assert call_kwargs["router_type"] == "hybrid"
+        assert call_kwargs["hybrid_router_config"] == hybrid_config
 
 
 class TestCreateChatManagerFactory:
@@ -590,3 +661,56 @@ class TestCreateChatManagerFactory:
         call_kwargs = mock_memory_handler.call_args.kwargs
         assert call_kwargs["max_memory_segments"] == 7
         assert call_kwargs["max_blocks"] == 12
+
+    @patch("src.conversation_manager.chat_handler.MemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_factory_passes_router_type_and_hybrid_config(
+        self, mock_openai, mock_memory_handler, mock_openai_config
+    ):
+        """Test factory passes router_type and hybrid_router_config."""
+        from src.conversation_manager.factory import create_chat_manager
+
+        hybrid_config = {
+            "embedding_provider": "openai",
+            "embedding_model": "text-embedding-3-small",
+            "summary_weight": 0.4,
+            "text_weight": 0.3,
+            "bm25_weight": 0.3,
+        }
+
+        create_chat_manager(
+            storage_mode="kv_cache",
+            model_id="test-model",
+            openai_config=mock_openai_config,
+            router_type="hybrid",
+            hybrid_router_config=hybrid_config,
+        )
+
+        call_kwargs = mock_memory_handler.call_args.kwargs
+        assert call_kwargs["router_type"] == "hybrid"
+        assert call_kwargs["hybrid_router_config"] == hybrid_config
+
+    @patch("src.conversation_manager.chat_handler.TextMemoryHandler")
+    @patch("src.agent.base.OpenAI")
+    def test_factory_text_mode_passes_router_config(
+        self, mock_openai, mock_memory_handler, mock_openai_config
+    ):
+        """Test factory passes router config for text storage mode."""
+        from src.conversation_manager.factory import create_chat_manager
+
+        hybrid_config = {
+            "embedding_provider": "huggingface",
+            "bm25_use_jieba": False,
+        }
+
+        create_chat_manager(
+            storage_mode="text",
+            model_id="test-model",
+            openai_config=mock_openai_config,
+            router_type="llm",
+            hybrid_router_config=hybrid_config,
+        )
+
+        call_kwargs = mock_memory_handler.call_args.kwargs
+        assert call_kwargs["router_type"] == "llm"
+        assert call_kwargs["hybrid_router_config"] == hybrid_config

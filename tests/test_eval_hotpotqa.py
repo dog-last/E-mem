@@ -136,7 +136,7 @@ class TestPromptGeneration:
 
 class TestProcessSample:
     @patch('evaluation.hotpotqa.eval_hotpotqa.create_chat_manager')
-    @patch('openai.OpenAI')
+    @patch('evaluation.hotpotqa.eval_hotpotqa.OpenAI')
     def test_process_sample_success(self, mock_openai, mock_create_chat):
         # Setup mocks
         mock_agent = Mock()

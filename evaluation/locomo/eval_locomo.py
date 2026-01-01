@@ -140,6 +140,9 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
             query_batch_size=config['memory'].get('query_batch_size', 4),
             max_parallel_cache_loads=config['memory'].get('max_parallel_cache_loads', 8),
             enable_router=config['memory'].get('enable_router', True),
+            # Router type and hybrid router configuration
+            router_type=config['memory'].get('router_type', 'hybrid'),
+            hybrid_router_config=config['memory'].get('hybrid_router'),
         )
 
         # Set up working client for final answer generation

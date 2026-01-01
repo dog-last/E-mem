@@ -3,15 +3,23 @@ import os
 import uuid
 from datetime import datetime
 
-TEXT_DATA_DIR = os.path.join(os.getcwd(), "text_data")
-os.makedirs(TEXT_DATA_DIR, exist_ok=True)
+
+def get_text_data_dir() -> str:
+    """Get text data directory, supporting override via environment variable."""
+    data_dir = os.environ.get('TEXT_DATA_DIR', os.path.join(os.getcwd(), "text_data"))
+    os.makedirs(data_dir, exist_ok=True)
+    return data_dir
+
+
+# For backward compatibility
+TEXT_DATA_DIR = get_text_data_dir()
 
 
 class TextBlock:
     def __init__(self, block_id: uuid.UUID, create_timestamp: str, block_size: int = 32000):
         self.block_id = block_id
         self.create_timestamp = create_timestamp
-        self.store_target = os.path.join(TEXT_DATA_DIR, f"text_block_{self.block_id}_{self.create_timestamp}.json")
+        self.store_target = os.path.join(get_text_data_dir(), f"text_block_{self.block_id}_{self.create_timestamp}.json")
         self.block_size = block_size
         self.block_used = 0
         self.chunk_num = 0
@@ -49,26 +57,37 @@ class TextBlock:
 
 
 def clear_text_cache():
-    if not os.path.exists(TEXT_DATA_DIR):
+    text_data_dir = get_text_data_dir()
+    if not os.path.exists(text_data_dir):
         return
-    for file in os.listdir(TEXT_DATA_DIR):
+    for file in os.listdir(text_data_dir):
         if file.endswith(".json") and not file.endswith("agents_metadata.json"):
-            os.remove(os.path.join(TEXT_DATA_DIR, file))
+            os.remove(os.path.join(text_data_dir, file))
 
 
-# Metadata functions
-TEXT_METADATA_FILE = os.path.join(TEXT_DATA_DIR, "agents_metadata.json")
+def get_text_metadata_file() -> str:
+    """Get text metadata file path, supporting override via environment variable."""
+    return os.path.join(get_text_data_dir(), "agents_metadata.json")
+
+
+# For backward compatibility
+TEXT_METADATA_FILE = get_text_metadata_file()
+
 
 def save_text_agents_metadata(agents_data: list):
-    with open(TEXT_METADATA_FILE, 'w', encoding='utf-8') as f:
+    metadata_file = get_text_metadata_file()
+    os.makedirs(os.path.dirname(metadata_file), exist_ok=True)
+    with open(metadata_file, 'w', encoding='utf-8') as f:
         json.dump(agents_data, f, ensure_ascii=False, indent=2)
 
 def load_text_agents_metadata() -> list:
-    if not os.path.exists(TEXT_METADATA_FILE):
+    metadata_file = get_text_metadata_file()
+    if not os.path.exists(metadata_file):
         return []
-    with open(TEXT_METADATA_FILE, 'r', encoding='utf-8') as f:
+    with open(metadata_file, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 def clear_text_metadata():
-    if os.path.exists(TEXT_METADATA_FILE):
-        os.remove(TEXT_METADATA_FILE)
+    metadata_file = get_text_metadata_file()
+    if os.path.exists(metadata_file):
+        os.remove(metadata_file)

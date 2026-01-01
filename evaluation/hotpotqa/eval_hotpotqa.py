@@ -169,31 +169,9 @@ Instructions:
 1.  **Analyze the Request**: Identify the specific entity, date, number, or name requested.
 2.  **Reasoning**: Think step-by-step to locate the answer in the context. If the question asks for a former name, time-specific detail, or multiple entities, ensure you select the exact one matching the criteria.
 3.  **Extraction**: Extract ONLY the specific answer string. Remove all articles (a, an, the), punctuation, and sentence structures.
-4.  **Format**:
-    * If the answer is a person, output only the name.
-    * If the answer is a date/year, output only the value.
-    * If the answer is a place, output only the location name.
-    * If the answer is a list, separate items with commas.
-    * If the question asks "yes or no", output "yes" or "no".
-5. **Note**: ALWAYS DIRECTLY OUTPUT the SHORT ANSWER not a sentence.
+4. **Note**: ALWAYS DIRECTLY OUTPUT the SHORT ANSWER not a sentence.
 
-Output Format:
-[The concise answer string]
 
-Example 1:
-Context: The 2008 film "Iron Man" stars Robert Downey Jr. as Tony Stark.
-Question: Who played Tony Stark in Iron Man?
-Output: Robert Downey Jr.
-
-Example 2:
-Context: The Beatles were formed in Liverpool in 1960.
-Question: In which city were The Beatles formed?
-Output: Liverpool
-
-Example 3:
-Context: John is taller than Bill. Bill is taller than Dave.
-Question: Is John taller than Dave?
-Output: yes
 
 Question: {question}
 
@@ -303,6 +281,9 @@ def process_sample(
             query_batch_size=config['memory'].get('query_batch_size', 4),
             max_parallel_cache_loads=config['memory'].get('max_parallel_cache_loads', 8),
             enable_router=config['memory'].get('enable_router', True),
+            # Router type and hybrid router configuration
+            router_type=config['memory'].get('router_type', 'hybrid'),
+            hybrid_router_config=config['memory'].get('hybrid_router'),
         )
         logger.info("[OK] ChatManager created")
         

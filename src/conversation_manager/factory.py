@@ -23,6 +23,9 @@ def create_chat_manager(
     query_batch_size: int = 4,
     max_parallel_cache_loads: int = 8,
     enable_router: bool = True,
+    # Router type and hybrid router configuration
+    router_type: str = "hybrid",
+    hybrid_router_config: Optional[Dict[str, Any]] = None,
     **kwargs: Any,
 ) -> Any:
     """
@@ -46,6 +49,8 @@ def create_chat_manager(
         query_batch_size: Queries to batch together (higher = more throughput, more memory)
         max_parallel_cache_loads: Max parallel KV cache loads to GPU
         enable_router: If False, skip LLM routing and query ALL blocks directly
+        router_type: Router type ('llm' or 'hybrid'). Default is 'hybrid'.
+        hybrid_router_config: Configuration for hybrid router (embedding, BM25 settings)
         **kwargs: Additional arguments passed to ChatManager
             For kv_cache mode: attn_implementation, device_map, quantization_config, max_memory, offload_folder
 
@@ -95,6 +100,8 @@ def create_chat_manager(
             query_batch_size=query_batch_size,
             max_parallel_cache_loads=max_parallel_cache_loads,
             enable_router=enable_router,
+            router_type=router_type,
+            hybrid_router_config=hybrid_router_config,
             **kwargs,
         )
     elif storage_mode == "text":
@@ -126,6 +133,8 @@ def create_chat_manager(
             max_memory_segments=max_memory_segments,
             max_blocks=max_blocks,
             enable_router=enable_router,
+            router_type=router_type,
+            hybrid_router_config=hybrid_router_config,
         )
     else:
         raise ValueError(

@@ -20,7 +20,7 @@ def test_imports():
     assert TextStorageChatManager is not None
 
 
-def test_text_block():
+def test_text_block(temp_text_dir):
     """Test TextBlock functionality."""
     block = TextBlock(
         block_id=uuid.uuid4(),
@@ -41,9 +41,6 @@ def test_text_block():
     # Test full detection
     block.add_chunk("Large memory", 900)
     assert block.is_full()
-    
-    # Cleanup
-    clear_text_cache()
 
 
 def test_factory_function():
@@ -52,13 +49,13 @@ def test_factory_function():
         create_chat_manager(storage_mode="invalid")
 
 
-def test_cleanup():
+def test_cleanup(temp_text_dir):
     """Test cache cleanup."""
     clear_text_cache()
     # Should not raise any errors
 
 
-def test_text_handler_overlap_mode_chunk():
+def test_text_handler_overlap_mode_chunk(temp_text_dir):
     """Test TextMemoryHandler with chunk overlap mode."""
     handler = TextMemoryHandler(
         model_id="test-model",
@@ -69,7 +66,7 @@ def test_text_handler_overlap_mode_chunk():
     assert handler.add_handler.overlap_mode == "chunk"
 
 
-def test_text_handler_overlap_mode_token():
+def test_text_handler_overlap_mode_token(temp_text_dir):
     """Test TextMemoryHandler with token overlap mode."""
     handler = TextMemoryHandler(
         model_id="test-model",
@@ -80,7 +77,7 @@ def test_text_handler_overlap_mode_token():
     assert handler.add_handler.overlap_mode == "token"
 
 
-def test_text_handler_overlap_mode_default():
+def test_text_handler_overlap_mode_default(temp_text_dir):
     """Test TextMemoryHandler default overlap mode."""
     handler = TextMemoryHandler(
         model_id="test-model",
@@ -89,7 +86,7 @@ def test_text_handler_overlap_mode_default():
     assert handler.add_handler.overlap_mode == "chunk"  # Default should be chunk
 
 
-def test_text_handler_with_memory_segment_params():
+def test_text_handler_with_memory_segment_params(temp_text_dir):
     """Test TextMemoryHandler with max_memory_segments and max_blocks."""
     handler = TextMemoryHandler(
         model_id="test-model",
@@ -101,7 +98,7 @@ def test_text_handler_with_memory_segment_params():
     assert handler.query_handler.router.max_blocks == 10
 
 
-def test_text_block_save_and_load():
+def test_text_block_save_and_load(temp_text_dir):
     """Test TextBlock save and load functionality."""
     block_id = uuid.uuid4()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -130,11 +127,8 @@ def test_text_block_save_and_load():
     assert "Second memory chunk" in text
     assert loaded_block.chunk_num == 2
 
-    # Cleanup
-    clear_text_cache()
 
-
-def test_text_block_is_full():
+def test_text_block_is_full(temp_text_dir):
     """Test TextBlock is_full detection."""
     block = TextBlock(
         block_id=uuid.uuid4(),
@@ -150,7 +144,7 @@ def test_text_block_is_full():
     assert block.is_full()
 
 
-def test_text_block_get_all_text_empty():
+def test_text_block_get_all_text_empty(temp_text_dir):
     """Test TextBlock get_all_text with no chunks."""
     block = TextBlock(
         block_id=uuid.uuid4(),
@@ -162,7 +156,7 @@ def test_text_block_get_all_text_empty():
     assert text == ""
 
 
-def test_text_handler_add_memory():
+def test_text_handler_add_memory(temp_text_dir):
     """Test TextMemoryHandler add_memory method."""
     from unittest.mock import Mock, patch
 
@@ -186,6 +180,3 @@ def test_text_handler_add_memory():
         # Verify memory was added
         assert handler.add_handler.active_memory_agent is not None
         assert len(handler.add_handler.active_memory_agent.current_block.chunks) > 0
-
-    # Cleanup
-    clear_text_cache()

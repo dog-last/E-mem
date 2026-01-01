@@ -11,15 +11,13 @@ from src.memory.core.text_loop_handler import (
     TextMemoryHandler,
     TextQueryHandler,
 )
-from src.memory.kv_block_manager.text_block import clear_text_cache, clear_text_metadata
 
 
 @pytest.fixture(autouse=True)
-def cleanup():
-    """Clean up after each test."""
+def cleanup(temp_text_dir):
+    """Clean up using temp directory fixture."""
     yield
-    clear_text_cache()
-    clear_text_metadata()
+    # temp_text_dir fixture handles cleanup automatically
 
 
 class TestTextAddHandler:

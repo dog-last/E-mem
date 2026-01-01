@@ -1,19 +1,90 @@
 """Pytest configuration and fixtures."""
-import tempfile
+import shutil
 import uuid
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 import torch
 
+# Get the tests directory path
+TESTS_DIR = Path(__file__).parent
+TEST_DATA_DIR = TESTS_DIR / "test_data"
+
 
 @pytest.fixture
 def temp_kv_dir(monkeypatch):
-    """Create temporary directory for KV cache."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        monkeypatch.setattr("src.memory.kv_block_manager.block.KV_DATA_DIR", tmpdir)
-        yield tmpdir
+    """Create temporary directory for KV cache in tests folder using environment variable."""
+    test_kv_dir = TEST_DATA_DIR / "kv_data"
+    test_kv_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Set environment variable BEFORE any module accesses the path
+    monkeypatch.setenv("KV_DATA_DIR", str(test_kv_dir))
+    
+    yield str(test_kv_dir)
+    
+    # Cleanup after test
+    if test_kv_dir.exists():
+        shutil.rmtree(test_kv_dir)
+
+
+@pytest.fixture
+def temp_text_dir(monkeypatch):
+    """Create temporary directory for text storage in tests folder using environment variable."""
+    test_text_dir = TEST_DATA_DIR / "text_data"
+    test_text_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Set environment variable BEFORE any module accesses the path
+    monkeypatch.setenv("TEXT_DATA_DIR", str(test_text_dir))
+    
+    yield str(test_text_dir)
+    
+    # Cleanup after test
+    if test_text_dir.exists():
+        shutil.rmtree(test_text_dir)
+
+
+@pytest.fixture
+def temp_metadata_dir(monkeypatch):
+    """Create temporary directory for metadata in tests folder using environment variable."""
+    test_kv_dir = TEST_DATA_DIR / "kv_data"
+    test_kv_dir.mkdir(parents=True, exist_ok=True)
+    
+    metadata_file = test_kv_dir / "agents_metadata.json"
+    
+    # Set environment variable BEFORE any module accesses the path
+    monkeypatch.setenv("KV_DATA_DIR", str(test_kv_dir))
+    
+    yield str(metadata_file)
+    
+    # Cleanup after test
+    if test_kv_dir.exists():
+        shutil.rmtree(test_kv_dir)
+
+
+@pytest.fixture
+def temp_all_data_dirs(monkeypatch):
+    """Create temporary directories for both KV and text data in tests folder."""
+    test_kv_dir = TEST_DATA_DIR / "kv_data"
+    test_text_dir = TEST_DATA_DIR / "text_data"
+    test_kv_dir.mkdir(parents=True, exist_ok=True)
+    test_text_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Set environment variables BEFORE any module accesses the paths
+    monkeypatch.setenv("KV_DATA_DIR", str(test_kv_dir))
+    monkeypatch.setenv("TEXT_DATA_DIR", str(test_text_dir))
+    
+    yield {
+        "kv_dir": str(test_kv_dir),
+        "text_dir": str(test_text_dir),
+        "kv_metadata": str(test_kv_dir / "agents_metadata.json"),
+        "text_metadata": str(test_text_dir / "agents_metadata.json"),
+    }
+    
+    # Cleanup after test
+    if TEST_DATA_DIR.exists():
+        shutil.rmtree(TEST_DATA_DIR)
 
 
 @pytest.fixture

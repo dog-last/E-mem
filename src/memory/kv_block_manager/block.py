@@ -3,16 +3,23 @@ import uuid
 
 import torch
 
-# Create kv_data directory in current working directory
-KV_DATA_DIR = os.path.join(os.getcwd(), "kv_data")
-os.makedirs(KV_DATA_DIR, exist_ok=True)
+
+def get_kv_data_dir() -> str:
+    """Get KV data directory, supporting override via environment variable."""
+    data_dir = os.environ.get('KV_DATA_DIR', os.path.join(os.getcwd(), "kv_data"))
+    os.makedirs(data_dir, exist_ok=True)
+    return data_dir
+
+
+# For backward compatibility
+KV_DATA_DIR = get_kv_data_dir()
 
 
 class KVBlock:
     def __init__(self,block_id:uuid.UUID,create_timestamp:str,block_size:int=32000):
         self.block_id=block_id
         self.create_timestamp=create_timestamp
-        self.store_target=os.path.join(KV_DATA_DIR, f"kv_cache_{self.block_id}_{self.create_timestamp}.pt")
+        self.store_target=os.path.join(get_kv_data_dir(), f"kv_cache_{self.block_id}_{self.create_timestamp}.pt")
         # block size measures the tokes that's stored instead of number of informations/chats
         # So the context window size should be at larger than the block size
         self.block_size=block_size
@@ -66,7 +73,8 @@ class KVBlock:
 
 def clear_cache():
     """Clear kv cache files for current session only."""
-    if not os.path.exists(KV_DATA_DIR):
+    kv_data_dir = get_kv_data_dir()
+    if not os.path.exists(kv_data_dir):
         return
     
     # Get session_id from environment
@@ -83,7 +91,7 @@ def clear_cache():
             current_session_blocks.add(m.get("block_id"))
     
     # Delete only files belonging to current session
-    for file in os.listdir(KV_DATA_DIR):
+    for file in os.listdir(kv_data_dir):
         if file.endswith(".pt"):
             # Extract block_id from filename: kv_cache_{block_id}_{timestamp}.pt
             parts = file.replace("kv_cache_", "").replace(".pt", "").split("_")
@@ -91,6 +99,6 @@ def clear_cache():
                 block_id = parts[0]
                 if block_id in current_session_blocks:
                     print(f"Deleting {file} (session: {session_id})")
-                    os.remove(os.path.join(KV_DATA_DIR, file))
+                    os.remove(os.path.join(kv_data_dir, file))
         
 
