@@ -1,208 +1,88 @@
-# KV-Cached Memory Agent System
+# E-mem
+
+> **An Engram-Centric Paradigm for Episodic LLM Agent Memory Management**
 
 <p align="center">
-  <strong>A novel approach to LLM memory management using KV cache for efficient context handling</strong>
-</p>
-
-<p align="center">
-  <a href="#-features">Features</a> •
+  <a href="#-overview">Overview</a> •
+  <a href="#-key-features">Key Features</a> •
+  <a href="#-installation">Installation</a> •
   <a href="#-quick-start">Quick Start</a> •
-  <a href="#-architecture">Architecture</a> •
-  <a href="#-configuration">Configuration</a> •
-  <a href="#-documentation">Documentation</a>
+  <a href="#-documentation">Documentation</a> •
+  <a href="#-evaluation">Evaluation</a>
 </p>
 
 ---
 
-## 🌟 Features
+## 🚀 Overview
 
-- **Dual Storage Modes**: KV Cache (GPU) and Text Storage (API-based)
-- **Hybrid Router**: Three-part scoring system combining embedding similarity and BM25 keyword matching
-- **Full Context Understanding**: LLM sees complete memory, not fragments
-- **KV Cache Reuse**: Cached context for efficient memory access
-- **Scalable Architecture**: Parallel agents handle growing memory
-- **Pydantic Validation**: Type-safe configuration with schema validation
-- **Multi-language Support**: Chinese text support via jieba tokenizer
-- **Flexible Embeddings**: Supports HuggingFace and OpenAI compatible embedding models
+E-mem provides a unified interface for managing long-term memory in LLM applications. It abstracts the complexity of storage, offering two distinct modes:
+
+1.  **KV Cache Mode (Main)**: The core operating mode. 
+2.  **Text Storage Mode (Debug/API)**: A lightweight fallback. It stores raw text and relies on the LLM provider's context window. Ideal for debugging, environments without GPUs, or when using cloud-based inference endpoints that outperform local hardware.
+
+## 🌟 Key Features
+
+*   **⚡ Optimized Context**: Reuses cached KV tensors to reduce re-computation of history (latency depends on local hardware; Text Mode may be faster for cloud APIs).
+*   **🧠 Hybrid Routing**: Advanced retrieval using a weighted mix of **Global Alignment** (Summary), **Semantic Association** (Dense), and **Symbolic Trigger** (Keyword).
+*   **💾 Dual Persistence**: Seamlessly switch between `.pt` tensor storage and `.json` text storage.
+*   **🛡️ Production Ready**: Type-safe configuration (Pydantic), automatic model compatibility checks, and robust error handling.
+*   **🔌 Model Agnostic**: Supports HuggingFace models (local) and OpenAI-compatible APIs.
 
 ## 📦 Installation
+
+We recommend using `uv` for dependency management
 
 ```bash
 # Clone the repository
 git clone https://github.com/your-username/mem-with-kv-cache.git
 cd mem-with-kv-cache
 
-# Install with uv (recommended)
+# Install with uv (Recommended)
 uv sync
-
-# Or with pip
-pip install -r requirements.txt
 
 # Setup configuration
 cp config.example.yaml config.yaml
 # Edit config.yaml with your settings
 ```
 
-## 🚀 Quick Start
+## ⚡ Quick Start
 
-### Using the Factory (Recommended)
+Get up and running in seconds. This factory pattern handles all complexity.
 
 ```python
 from src.conversation_manager import create_chat_manager
 
-# KV Cache mode (GPU required)
+# 1. Initialize Manager (KV Cache Mode)
 manager = create_chat_manager(
-    storage_mode="kv_cache",
-    model_id="Qwen/Qwen3-4B",
-    openai_config={
+    storage_mode="kv_cache",           # Use "text" for API-only mode
+    model_id="Qwen/Qwen3-4B",          # HuggingFace Model ID
+    openai_config={                    # For the LLM generation (can be local or remote)
         "api_key": "your-key",
         "base_url": "https://api.openai.com/v1",
         "model": "gpt-4o-mini"
     }
 )
 
-# Store memory
-manager.chat("My name is Alice and I love hiking.", auto_save=True)
+# 2. Add Memory
+# The system automatically chunks, embeds, and indexes this.
+manager.chat("My name is Alice and I am a software engineer.", auto_save=True)
 
-# Query memory
-response = manager.chat("What is my name and hobby?")
+# 3. Query Memory
+# The Hybrid Router retrieves relevant context automatically.
+response = manager.chat("What is my profession?")
 print(response)
+# Output: "You are a software engineer."
 ```
 
-### Text Storage Mode (No GPU Required)
+## 📚 Documentation
 
-```python
-manager = create_chat_manager(
-    storage_mode="text",
-    model_id="Qwen/Qwen3-4B",
-    openai_config={"api_key": "your-key", "model": "gpt-4o-mini"}
-)
-```
+Detailed documentation for architects and engineers.
 
-See [docs/QUICKSTART_TEXT_STORAGE.md](docs/QUICKSTART_TEXT_STORAGE.md) for detailed guide.
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    ChatManager (Interface)                   │
-│                 ┌──────────────────────────┐                │
-│                 │    BaseChatManager       │                │
-│                 │  - Tool definitions      │                │
-│                 │  - Memory aggregation    │                │
-│                 └──────────────────────────┘                │
-│                            │                                 │
-│              ┌─────────────┴─────────────┐                  │
-│              ▼                           ▼                  │
-│    ┌─────────────────┐         ┌─────────────────┐         │
-│    │   ChatManager   │         │ TextStorage     │         │
-│    │   (KV Cache)    │         │ ChatManager     │         │
-│    └────────┬────────┘         └────────┬────────┘         │
-└─────────────┼───────────────────────────┼───────────────────┘
-              │                           │
-              ▼                           ▼
-┌─────────────────────────┐    ┌─────────────────────────┐
-│    MemoryHandler        │    │   TextMemoryHandler     │
-│  ┌───────────────────┐  │    │  ┌───────────────────┐  │
-│  │   AddHandler      │  │    │  │  TextAddHandler   │  │
-│  │   (Active Agent)  │  │    │  │  (Text Storage)   │  │
-│  └───────────────────┘  │    │  └───────────────────┘  │
-│  ┌───────────────────┐  │    │  ┌───────────────────┐  │
-│  │   QueryHandler    │  │    │  │ TextQueryHandler  │  │
-│  │   (Router)        │  │    │  │   (Router)        │  │
-│  └───────────────────┘  │    │  └───────────────────┘  │
-└─────────────────────────┘    └─────────────────────────┘
-              │                           │
-              ▼                           ▼
-       ┌──────────┐                ┌──────────┐
-       │ KVBlock  │                │TextBlock │
-       │ (.pt)    │                │ (.json)  │
-       └──────────┘                └──────────┘
-```
-
-### Core Components
-
-| Component | Description |
-|-----------|-------------|
-| **BaseChatManager** | Abstract base with shared tool definitions and memory aggregation |
-| **ChatManager** | KV cache implementation for GPU-based storage |
-| **TextStorageChatManager** | Text-based implementation for API-only deployment |
-| **MemoryHandler** | Orchestrates memory addition and retrieval |
-| **HybridRouter** | Three-part hybrid routing: embedding similarity + BM25 keywords |
-| **Router** | Legacy LLM-based intelligent routing using summaries |
-| **KVBlock/TextBlock** | Storage backends for memory persistence |
-
-### Hybrid Router
-
-The HybridRouter uses a three-part scoring system for accurate memory block selection:
-
-1. **Summary Embedding Similarity** (default: 30%): Matches query against block summaries
-2. **Text Embedding Similarity** (default: 40%): Matches query against chunked original text
-3. **BM25 Keyword Scoring** (default: 30%): Traditional keyword matching with inverted index
-
-**Features:**
-- **Embedding Providers**: HuggingFace (local) or OpenAI compatible APIs
-- **Chinese Support**: Uses jieba tokenizer for Chinese text
-- **Configurable Weights**: Adjust scoring weights via config.yaml
-
-## ⚙️ Configuration
-
-### Configuration Schema (Pydantic Validated)
-
-```yaml
-# config.yaml
-model:
-  model_id: "Qwen/Qwen3-4B"
-  openai_config:
-    api_key: "your-api-key"
-    base_url: "https://api.openai.com/v1"
-    model: "gpt-4o-mini"
-  model_context_window: 32768
-  attn_implementation: "sdpa"  # sdpa, flash_attention_2, eager
-  device_map: "auto"
-
-memory:
-  storage_mode: "kv_cache"      # kv_cache or text
-  clean_cache_first: true
-  overlap_ratio: 0.1            # 0.0-0.5
-  overlap_mode: "chunk"         # chunk or token
-  block_size_ratio: 0.125       # 0.0-1.0
-  max_concurrent_gpu_operations: 2
-  max_memory_segments: 5        # Max segments returned per query (optional)
-  max_blocks: 5                 # Max memory blocks selected by router
-  router_type: "hybrid"         # "hybrid" (recommended) or "llm" (legacy)
-  
-  # Hybrid router settings
-  hybrid_router:
-    embedding_provider: "huggingface"  # huggingface or openai
-    summary_weight: 0.3         # Weight for summary embedding similarity
-    text_weight: 0.4            # Weight for text embedding similarity
-    bm25_weight: 0.3            # Weight for BM25 keyword matching
-    bm25_use_jieba: true        # Chinese text support
-
-max_memory:
-  0: "20GB"
-  1: "20GB"
-```
-
-### Programmatic Configuration with Validation
-
-```python
-from src.config import load_and_validate_config, MemoryConfig
-
-# Validate memory config
-memory_config = MemoryConfig(
-    storage_mode="kv_cache",
-    overlap_ratio=0.1,
-    block_size_ratio=0.125,
-    max_memory_segments=5,
-    max_blocks=5
-)
-
-# Load and validate full config
-from config import load_validated_config
-app_config = load_validated_config("config.yaml")
-```
+| Resource | Description |
+|:---|:---|
+| **[Architecture](docs/ARCHITECTURE.md)** | Deep dive into system design, components, and the Hybrid Router. |
+| **[Operational Guides](docs/GUIDES.md)** | Guides on Persistence, Text Mode, and Model Compatibility. |
+| **[API Reference](docs/API_REFERENCE.md)** | Complete API specification for Managers, Handlers, and Config. |
 
 ## 📁 Project Structure
 
@@ -219,7 +99,7 @@ mem-with-kv-cache/
 │   │   ├── core/                 # Memory handlers
 │   │   ├── kv_block_manager/     # KV cache storage
 │   │   ├── memory_agent/         # Memory agents
-│   │   └── router/               # LLM-based routing
+│   │   └── router/               # Hybrid and LLM-based routing
 │   └── utils/                    # Utilities & prompts
 ├── evaluation/
 │   ├── locomo/                   # LoComo benchmark
@@ -232,6 +112,8 @@ mem-with-kv-cache/
 
 ## 🧪 Testing
 
+Ensure system stability with our comprehensive test suite.
+
 ```bash
 # Run all tests
 pytest tests/
@@ -243,67 +125,53 @@ pytest tests/ --cov=src --cov-report=html
 pytest tests/test_chat_manager.py -v
 ```
 
-## 📚 Documentation
+## 📊 Evaluation (Reproducing Results)
 
-| Document | Description |
-|----------|-------------|
-| [docs/README.md](docs/README.md) | Complete documentation index |
-| [docs/QUICKSTART_TEXT_STORAGE.md](docs/QUICKSTART_TEXT_STORAGE.md) | Text storage quick start |
-| [docs/ARCHITECTURE_COMPARISON.md](docs/ARCHITECTURE_COMPARISON.md) | KV Cache vs Text Storage |
-| [docs/PERSISTENCE.md](docs/PERSISTENCE.md) | KV cache persistence |
-| [docs/API_REFERENCE.md](docs/API_REFERENCE.md) | API reference |
-| [evaluation/locomo/README.md](evaluation/locomo/README.md) | LoComo evaluation guide |
+To reproduce the results presented in our paper, we provide automated scripts for both **LoComo** (Long-Context Memory) and **HotpotQA** (Multi-hop QA) benchmarks.
 
-## 🎯 Use Cases
+### LoComo Benchmark
+Evaluates long-term memory retention and retrieval accuracy.
 
-### ✅ Best For
-
-- **Conversational AI**: Personal assistants, chatbots with memory
-- **User-specific Data**: Individual user memory management
-- **High Accuracy Needs**: Full context understanding required
-- **Local Deployment**: GPU-based KV cache for efficiency
-
-### ❌ Not Recommended For
-
-- **Enterprise RAG**: Vector DBs more efficient at scale
-- **Real-time Updates**: KV cache rebuild has overhead
-- **Task Agents**: Traditional RAG better for tool-heavy workflows
-
-## 🔬 Technical Details
-
-### KV Cache Mechanism
-
-1. Each memory chunk is processed through the model once
-2. KV tensors are cached and stored to disk (`.pt` files)
-3. During query, cached KV tensors are loaded and reused
-4. Position IDs ensure correct RoPE embeddings
-
-### Memory Lifecycle
-
-```
-User Input → Active Agent (add to KV cache)
-                    ↓
-            Block Full (90% capacity)?
-                    ↓ Yes
-            Generate Summary → Move to Inactive Pool
-                    ↓
-            Create New Active Agent
-                    ↓
-Query → Router (select by summary) → Parallel Query → Aggregate Results
+```bash
+# Run LoComo evaluation
+bash scripts/eval_locomo.sh
 ```
 
-## 📝 License
+### HotpotQA Benchmark
+Evaluates multi-hop reasoning capabilities using retrieved memory blocks.
 
-This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
+```bash
+# Run HotpotQA evaluation
+bash scripts/eval_hotpotqa.sh
+```
 
-### Code Attribution
-
-The evaluation code in `evaluation/hotpotqa/eval_hotpotqa.py` is adapted from the GAM framework (MIT License). See [NOTICE](NOTICE) for details.
+> Detailed evaluation configurations can be found in [`evaluation/locomo/README.md`](evaluation/locomo/README.md) and [`evaluation/hotpotqa/README.md`](evaluation/hotpotqa/README.md).
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please ensure:
+We welcome contributions to E-mem! Please follow this workflow to ensure quality:
 
-1. Run tests: `pytest tests/`
-2. Run linting: `ruff check .`
-3. Run pre-commit hooks: `pre-commit run --all-files`
+1.  **Fork & Clone**: Fork the repository and clone it locally.
+2.  **Install Dependencies**:
+    ```bash
+    uv sync  
+    ```
+3.  **Setup Pre-commit**:
+    Ensure code quality hooks are active.
+    ```bash
+    pre-commit install
+    ```
+4.  **Run Tests**:
+    Verify that your changes don't break existing functionality.
+    ```bash
+    pytest tests/
+    ```
+5.  **Update Documentation**:
+    If you modify the API or features, please update the relevant `docs/*.md` files or README.md file.
+
+## 📄 License & Attribution
+
+This project is licensed under the **Apache License 2.0**. See [LICENSE](LICENSE) for details.
+
+### Acknowledgements
+This project includes some evaluation code adapted from the **GAM (General Agentic Memory)** framework. We explicitly acknowledge and thank the original authors. Please see [NOTICE](NOTICE) for detailed attribution and license information regarding third-party code.

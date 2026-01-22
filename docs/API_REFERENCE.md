@@ -1,393 +1,112 @@
 # API Reference
 
-This document provides detailed API documentation for the KV-Cached Memory Agent System.
+This reference documents the core Python API for E-mem, focusing on initialization and configuration.
 
-## Table of Contents
-
-- [Factory Function](#factory-function)
-- [Chat Managers](#chat-managers)
-- [Configuration](#configuration)
-- [Memory Handlers](#memory-handlers)
-
----
-
-## Factory Function
+## Initialization
 
 ### `create_chat_manager`
 
-Factory function to create a chat manager with the specified storage backend.
+The primary entry point for initializing the system. Supports both KV Cache (GPU) and Text (CPU/API) storage modes.
 
 ```python
-from src.conversation_manager import create_chat_manager
-
-manager = create_chat_manager(
+def create_chat_manager(
     storage_mode: Literal["kv_cache", "text"] = "kv_cache",
     model_id: str = "Qwen/Qwen3-4B",
-    openai_config: dict = None,
+    openai_config: Optional[Dict[str, Any]] = None,
     clean_cache_first: bool = True,
     model_context_window: int = 32768,
-    router_system_prompt: str = None,
+    router_system_prompt: Optional[str] = None,
     overlap_mode: str = "chunk",
     overlap_ratio: float = 0.1,
     block_size_ratio: float = 0.125,
-    **kwargs
-)
+    max_memory_segments: Optional[int] = None,
+    max_blocks: int = 5,
+    query_batch_size: int = 4,
+    max_parallel_cache_loads: int = 8,
+    enable_router: bool = True,
+    router_type: str = "hybrid",
+    hybrid_router_config: Optional[Dict[str, Any]] = None,
+    **kwargs: Any,
+) -> Union[ChatManager, TextStorageChatManager]
 ```
 
-**Parameters:**
+#### Key Arguments
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `storage_mode` | `Literal["kv_cache", "text"]` | `"kv_cache"` | Storage backend |
-| `model_id` | `str` | `"Qwen/Qwen3-4B"` | HuggingFace model ID |
-| `openai_config` | `dict` | `None` | OpenAI API configuration |
-| `clean_cache_first` | `bool` | `True` | Clear cache on init |
-| `model_context_window` | `int` | `32768` | Context window size |
-| `router_system_prompt` | `str` | `None` | Custom router prompt |
-| `overlap_mode` | `str` | `"chunk"` | `"chunk"` or `"token"` |
-| `overlap_ratio` | `float` | `0.1` | Overlap ratio (0.0-0.5) |
-| `block_size_ratio` | `float` | `0.125` | Block size ratio (0.0-1.0) |
-
-**KV Cache Mode Additional Parameters:**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `attn_implementation` | `str` | `"sdpa"` | Attention implementation |
-| `device_map` | `str` | `"auto"` | Device mapping strategy |
-| `quantization_config` | `dict` | `None` | Quantization config |
-| `max_memory` | `dict` | `None` | Max memory per GPU |
-| `offload_folder` | `str` | `None` | Offload folder path |
-
-**Returns:** `ChatManager` or `TextStorageChatManager`
-
-**Example:**
-
-```python
-# KV Cache mode
-kv_manager = create_chat_manager(
-    storage_mode="kv_cache",
-    model_id="Qwen/Qwen3-4B",
-    openai_config={"api_key": "your-key", "model": "gpt-4o-mini"},
-    max_memory={"0": "20GB", "1": "20GB"}
-)
-
-# Text Storage mode
-text_manager = create_chat_manager(
-    storage_mode="text",
-    model_id="Qwen/Qwen3-4B",
-    openai_config={"api_key": "your-key", "model": "gpt-4o-mini"}
-)
-```
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `storage_mode` | `str` | `"kv_cache"` | `"kv_cache"` for GPU tensor storage; `"text"` for JSON/API storage. |
+| `model_id` | `str` | `"Qwen/Qwen3-4B"` | HuggingFace model ID or local path. Required for tokenization in both modes. |
+| `openai_config` | `dict` | `None` | Config for LLM generation (`api_key`, `base_url`, `model`). |
+| `clean_cache_first` | `bool` | `True` | **Warning**: If `True`, wipes all data with the same session id in `kv_data/` on startup. |
+| `enable_router` | `bool` | `True` | If `False`, skips retrieval and forces all memory blocks into context (debugging only). |
+| `router_type` | `str` | `"hybrid"` | `"hybrid"` or `"llm"` (legacy). |
+| `hybrid_router_config` | `dict` | `None` | Overrides for router weights and thresholds (see `HybridRouterConfig`). |
+| `router_system_prompt` | `str` | `None` | Custom system prompt for the router. |
+| `quantization_config` | `dict` | `None` | HuggingFace quantization config (e.g., bitsandbytes). |
+| `max_memory` | `dict` | `None` | Max memory per GPU device (e.g., `{"0": "20GiB"}`). |
+| `offload_folder` | `str` | `None` | Folder for offloading model weights if GPU is full. |
 
 ---
 
-## Chat Managers
+## Configuration Classes
 
-### `BaseChatManager`
+Configuration is validated using Pydantic models.
 
-Abstract base class providing shared functionality.
+### `HybridRouterConfig`
 
-**Class Constants:**
+Controls the retrieval logic for the Hybrid Router.
 
-```python
-ADD_MEMORY_TOOL: dict   # Tool definition for add_memory
-SEARCH_MEMORY_TOOL: dict  # Tool definition for query_memory
-```
-
-**Methods:**
-
-#### `chat()`
-
-Main chat interface method.
-
-```python
-def chat(
-    self,
-    user_input: str,
-    outer_tools: Optional[List[dict]] = None,
-    auto_save: bool = False,
-    save_original_input: bool = False,
-    max_new_tokens: int = 1024
-) -> str
-```
-
-**Parameters:**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `user_input` | `str` | - | User's input message |
-| `outer_tools` | `List[dict]` | `None` | Additional tools |
-| `auto_save` | `bool` | `False` | Auto-save without LLM |
-| `save_original_input` | `bool` | `False` | Save original vs extracted |
-| `max_new_tokens` | `int` | `1024` | Max tokens to generate |
-
-**Returns:** `str` - The response
-
-**Example:**
-
-```python
-# Let LLM decide to store
-response = manager.chat("My favorite color is blue.")
-
-# Force auto-save
-manager.chat("[2024-01-01] Meeting notes...", auto_save=True)
-
-# Query memory
-response = manager.chat("What is my favorite color?")
-```
-
-#### `add_memory()`
-
-Directly add memory without chat interface.
-
-```python
-def add_memory(self, memory: str) -> str
-```
-
-**Returns:** Success/error message string
-
-#### `search_memory()`
-
-Directly search memory without chat interface.
-
-```python
-def search_memory(self, query: str) -> str
-```
-
-**Returns:** Aggregated search results
-
----
-
-### `ChatManager`
-
-KV cache implementation for GPU-based storage.
-
-```python
-from src.conversation_manager import ChatManager
-
-manager = ChatManager(
-    model_id="Qwen/Qwen3-4B",
-    openai_config={"api_key": "your-key"},
-    model_context_window=32768,
-    attn_implementation="sdpa",
-    device_map="auto",
-    block_size_ratio=0.125,
-    max_memory_segments=5,  # Limit segments returned per query
-    max_blocks=5            # Limit blocks selected by router
-)
-```
-
-**Parameters:**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `model_id` | `str` | required | HuggingFace model ID or local path |
-| `openai_config` | `dict` | required | OpenAI API configuration |
-| `model_context_window` | `int` | `32768` | Model context window size |
-| `attn_implementation` | `str` | `"sdpa"` | Attention implementation |
-| `device_map` | `str` | `"auto"` | Device mapping strategy |
-| `block_size_ratio` | `float` | `0.125` | Block size ratio (0.0-1.0) |
-| `overlap_ratio` | `float` | `0.1` | Overlap ratio (0.0-0.5) |
-| `max_memory_segments` | `int` | `None` | Max segments per query (None=unlimited) |
-| `max_blocks` | `int` | `5` | Max blocks selected by router |
-
-**Properties:**
-
-- `name: str` - Returns `"chat_manager"`
-- `memory_handler: MemoryHandler` - The memory handler instance
-
----
-
-### `TextStorageChatManager`
-
-Text-based implementation for API-only deployment.
-
-```python
-from src.conversation_manager import TextStorageChatManager
-
-manager = TextStorageChatManager(
-    model_id="Qwen/Qwen3-4B",
-    openai_config={"api_key": "your-key"},
-    model_context_window=32768,
-    block_size_ratio=0.125,
-    max_memory_segments=5,
-    max_blocks=5
-)
-```
-
-**Parameters:**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `model_id` | `str` | required | HuggingFace model ID (for tokenization) |
-| `openai_config` | `dict` | required | OpenAI API configuration |
-| `model_context_window` | `int` | `32768` | Model context window size |
-| `block_size_ratio` | `float` | `0.125` | Block size ratio (0.0-1.0) |
-| `overlap_ratio` | `float` | `0.1` | Overlap ratio (0.0-0.5) |
-| `max_memory_segments` | `int` | `None` | Max segments per query (None=unlimited) |
-| `max_blocks` | `int` | `5` | Max blocks selected by router |
-
-**Properties:**
-
-- `name: str` - Returns `"text_chat_manager"`
-- `memory_handler: TextMemoryHandler` - The memory handler instance
-
----
-
-## Configuration
-
-### Configuration Schema Classes
-
-All configuration is validated using Pydantic models.
-
-```python
-from src.config import (
-    AppConfig,
-    ModelConfig,
-    MemoryConfig,
-    OpenAIConfig,
-    LoggingConfig,
-    LocomoEvalConfig,
-    HotpotQAEvalConfig,
-)
-```
-
-### `OpenAIConfig`
-
-```python
-class OpenAIConfig(BaseModel):
-    api_key: str          # Required
-    base_url: str = "https://api.openai.com/v1"
-    model: str = "gpt-4o-mini"
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `embedding_provider` | `str` | `"huggingface"` | `"huggingface"` or `"openai"`. |
+| `embedding_model` | `str` | `None` | Embedding model name (e.g., `sentence-transformers/all-MiniLM-L6-v2`). |
+| `embedding_config` | `dict` | `None` | Extra config for embeddings (e.g., API key). |
+| `summary_weight` | `float` | `0.3` | Weight for **Global Alignment** (summary embedding similarity). |
+| `text_weight` | `float` | `0.4` | Weight for **Semantic Association** (raw text embedding similarity). |
+| `bm25_weight` | `float` | `0.3` | Weight for **Symbolic Trigger** (keyword matching). |
+| `summary_top_k` | `int` | `10` | Top-k summaries to consider. |
+| `text_top_k` | `int` | `20` | Top-k text chunks to consider. |
+| `bm25_top_k` | `int` | `10` | Top-k BM25 results to consider. |
+| `text_chunk_size` | `int` | `512` | Max chunk size for text embeddings (chars). |
+| `text_chunk_overlap` | `int` | `50` | Overlap between text chunks (chars). |
+| `bm25_boost_threshold` | `float` | `None` | If > 0, bypasses weighted score for strong keyword matches. |
+| `use_llm_fallback` | `bool` | `False` | Fallback to LLM routing if embeddings fail. |
+| `bm25_use_jieba` | `bool` | `True` | Use jieba tokenizer for Chinese text support. |
 
 ### `MemoryConfig`
 
-```python
-class MemoryConfig(BaseModel):
-    storage_mode: Literal["kv_cache", "text"] = "kv_cache"
-    clean_cache_first: bool = True
-    router_system_prompt: Optional[str] = None
-    overlap_ratio: float = 0.1        # 0.0-0.5
-    overlap_mode: Literal["chunk", "token"] = "chunk"
-    block_size_ratio: float = 0.125   # 0.0-1.0
-    max_concurrent_gpu_operations: int = 2
-    max_memory_segments: int = 5
-    max_blocks: int = 5
-```
+Controls memory block management and hardware usage.
 
-### Loading Configuration
-
-```python
-from config import load_validated_config, ConfigurationError
-
-try:
-    config = load_validated_config("config.yaml")
-    print(f"Model: {config.model.model_id}")
-    print(f"Storage mode: {config.memory.storage_mode}")
-except ConfigurationError as e:
-    print(f"Invalid configuration: {e}")
-```
-
-### Standalone Validation
-
-```python
-from src.config import validate_memory_config, validate_openai_config
-
-# Validate memory config
-memory_config = validate_memory_config({
-    "storage_mode": "kv_cache",
-    "overlap_ratio": 0.1
-})
-
-# Validate OpenAI config
-openai_config = validate_openai_config({
-    "api_key": "your-key",
-    "model": "gpt-4o-mini"
-})
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `storage_mode` | `str` | `"kv_cache"` | Storage backend mode. |
+| `max_blocks` | `int` | `5` | Max memory blocks to retrieve per query. |
+| `max_parallel_cache_loads` | `int` | `8` | Max concurrent KV cache loads (GPU VRAM dependent). |
+| `kv_cache_on_gpu` | `bool` | `False` | Keep inactive caches on GPU (requires massive VRAM, e.g., A100s). |
+| `block_size_ratio` | `float` | `0.125` | Target size of each memory block relative to context window. |
 
 ---
 
-## Memory Handlers
+## Core Interfaces
 
-### `MemoryHandler`
+### `ChatManager` / `TextStorageChatManager`
 
-Orchestrates memory operations for KV cache mode.
+The high-level interface returned by `create_chat_manager`.
 
-```python
-from src.memory.core.loop_handler import MemoryHandler
+#### Methods
 
-handler = MemoryHandler(
-    model_id="Qwen/Qwen3-4B",
-    openai_config={"api_key": "your-key"},
-    clean_cache_first=True,
-    model_context_window=32768,
-    overlap_ratio=0.1
-)
-```
+- **`chat(user_input: str, outer_tools: list = None, auto_save: bool = False, save_original_input: bool = False, max_new_tokens: int = 1024) -> str`**
+  - Processes a user query, retrieves context, and generates a response.
+  - `user_input`: The user's input message.
+  - `outer_tools`: Additional tools to pass to the agent.
+  - `auto_save`: If `True`, directly saves input to memory without generating a response (fast path).
+  - `save_original_input`: If `True`, saves the raw user input instead of LLM-extracted content.
+  - `max_new_tokens`: Maximum number of tokens to generate.
 
-**Methods:**
+- **`add_memory(memory: str) -> str`**
+  - Manually injects text into the memory stream without generating a response.
+  - Returns a success or failure message.
 
-```python
-# Add memory
-handler.add_memory(text: str) -> None
-
-# Query memory
-result = handler.query_memory(user_query: str) -> str
-```
-
-### `TextMemoryHandler`
-
-Orchestrates memory operations for text storage mode.
-
-```python
-from src.memory.core.text_loop_handler import TextMemoryHandler
-
-handler = TextMemoryHandler(
-    model_id="Qwen/Qwen3-4B",
-    openai_config={"api_key": "your-key"},
-    clean_cache_first=True,
-    model_context_window=32768
-)
-```
-
----
-
-## Error Handling
-
-### `ConfigurationError`
-
-Raised when configuration validation fails.
-
-```python
-from config import ConfigurationError
-
-try:
-    config = load_validated_config("invalid.yaml")
-except ConfigurationError as e:
-    print(f"Configuration error: {e}")
-```
-
----
-
-## Import Paths Summary
-
-```python
-# Main interface
-from src.conversation_manager import create_chat_manager
-from src.conversation_manager import ChatManager, TextStorageChatManager
-
-# Configuration
-from src.config import AppConfig, MemoryConfig, load_and_validate_config
-from config import load_validated_config, ConfigurationError
-
-# Memory handlers (low-level)
-from src.memory.core.loop_handler import MemoryHandler
-from src.memory.core.text_loop_handler import TextMemoryHandler
-
-# Evaluation utilities
-from evaluation.locomo.load_dataset import load_locomo_dataset
-from evaluation.locomo.utils import calculate_metrics
-```
-
+- **`search_memory(query: str) -> str`**
+  - Searches the memory blocks for relevant information using the configured router.
+  - Returns aggregated results from retrieved blocks.
