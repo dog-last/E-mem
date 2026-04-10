@@ -33,7 +33,11 @@ def get_config_path() -> str:
     return os.path.join(os.path.dirname(__file__), "config.yaml")
 
 
-def load_raw_config(config_path: Optional[str] = None) -> Dict[str, Any]:
+def load_raw_config(
+    config_path: Optional[str] = None,
+    *,
+    warn_if_missing: bool = True,
+) -> Dict[str, Any]:
     """
     Load raw configuration from YAML file.
 
@@ -50,7 +54,8 @@ def load_raw_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         config_path = get_config_path()
 
     if not os.path.exists(config_path):
-        logger.warning(f"Config file not found: {config_path}, using defaults")
+        if warn_if_missing:
+            logger.warning(f"Config file not found: {config_path}, using defaults")
         return {}
 
     try:
@@ -134,7 +139,7 @@ def _update_globals_from_config() -> None:
     """Update global configuration values from config file."""
     global MAX_CONCURRENT_GPU_OPERATIONS, DEFAULT_OVERLAP_RATIO, DEFAULT_BLOCK_SIZE_RATIO
 
-    config_data = get_config()
+    config_data = load_raw_config(warn_if_missing=False)
     if not config_data:
         return
 

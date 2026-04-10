@@ -61,6 +61,10 @@ cp config.kv.yaml config.yaml
 # Edit config.yaml with your settings
 ```
 
+The repository-root `config.yaml` is for the library, quickstart, and examples. The benchmark runners use benchmark-local configs by default:
+- `evaluation/locomo/config.yaml`
+- `evaluation/hotpotqa/config.yaml`
+
 ## ⚡ Quick Start
 
 Get up and running with the E-mem factory. This example initializes a Master-Assistant setup.
@@ -167,6 +171,9 @@ Evaluates long-term memory coherence, including multi-hop and temporal reasoning
 ```bash
 # Run LoCoMo evaluation
 bash scripts/eval_locomo.sh
+
+# Equivalent explicit config
+bash scripts/eval_locomo.sh --config evaluation/locomo/config.yaml
 ```
 
 ### HotpotQA Benchmark
@@ -175,9 +182,12 @@ Stress-tests the system on multi-hop QA with ultra-long contexts (streaming sett
 ```bash
 # Run HotpotQA evaluation
 bash scripts/eval_hotpotqa.sh
+
+# Equivalent explicit config
+bash scripts/eval_hotpotqa.sh --config evaluation/hotpotqa/config.yaml
 ```
 
-> Detailed evaluation configurations and baseline comparisons can be found in [`evaluation/locomo/README.md`](evaluation/locomo/README.md) and [`evaluation/hotpotqa/README.md`](evaluation/hotpotqa/README.md).
+> The root `config.yaml` is not used by these evaluation commands unless you pass it explicitly. Detailed benchmark configuration and baseline comparisons can be found in [`evaluation/locomo/README.md`](evaluation/locomo/README.md) and [`evaluation/hotpotqa/README.md`](evaluation/hotpotqa/README.md).
 
 ## 🤝 Contributing
 

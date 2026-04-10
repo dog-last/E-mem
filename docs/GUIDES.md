@@ -97,7 +97,11 @@ The system automatically tracks the `model_id` for every memory block.
 
 ## 4. Configuration Guide
 
-Configuration is handled via `config.yaml` or Pydantic objects. Start from either [`config.kv.yaml`](../config.kv.yaml) or [`config.text.yaml`](../config.text.yaml), then copy the one you want to `config.yaml`.
+Configuration is handled via `config.yaml` or Pydantic objects. Start from either [`config.kv.yaml`](../config.kv.yaml) or [`config.text.yaml`](../config.text.yaml), then copy the one you want to the repository-root `config.yaml`.
+
+That root `config.yaml` is the default for the library, quickstart, and examples. Benchmark scripts use benchmark-local configs by default instead:
+- `evaluation/locomo/config.yaml`
+- `evaluation/hotpotqa/config.yaml`
 
 If you are unsure what each model field means, read [Config Model Roles](CONFIG_MODELS.md) before editing the config. That page explains exactly how `memory_agent_model` and `general_model` work, and how the optional role overrides inherit from `general_model`.
 

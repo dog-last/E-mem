@@ -47,7 +47,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Run evaluation from project root
-uv run python evaluation/locomo/eval_locomo.py \
+uv run python -m evaluation.locomo.eval_locomo \
     --config "$CONFIG" \
     $MODEL_ID \
     $DATASET \

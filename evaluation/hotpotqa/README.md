@@ -21,6 +21,8 @@ cp evaluation/hotpotqa/config.kv.yaml evaluation/hotpotqa/config.yaml
    - Set dataset path
    - Other configurations
 
+The repository-root `config.yaml` is for quickstart/examples. `bash scripts/eval_hotpotqa.sh` defaults to `evaluation/hotpotqa/config.yaml`.
+
 If you are not sure what each `model.*` field means, read [Config Model Roles](../../docs/CONFIG_MODELS.md) first.
 If you want the meaning of the memory, router, evaluation, or logging fields, read [Config Reference](../../docs/CONFIG_REFERENCE.md).
 

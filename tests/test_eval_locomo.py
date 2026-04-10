@@ -261,3 +261,28 @@ class TestMain:
                 main()
         
         mock_evaluate.assert_called_once()
+
+    @patch('evaluation.locomo.eval_locomo.evaluate_dataset')
+    @patch('evaluation.locomo.eval_locomo.setup_logger')
+    @patch('evaluation.locomo.eval_locomo.load_raw_config')
+    def test_main_uses_benchmark_local_default_config(
+        self,
+        mock_load_raw_config,
+        mock_setup_logger,
+        mock_evaluate,
+        mock_config,
+    ):
+        import sys
+
+        from evaluation.locomo.eval_locomo import main
+
+        mock_load_raw_config.return_value = mock_config
+        mock_setup_logger.return_value = Mock()
+        mock_evaluate.return_value = {'total_questions': 1}
+
+        with patch.object(sys, 'argv', ['eval_locomo.py']):
+            with patch('os.makedirs'):
+                main()
+
+        called_path = mock_load_raw_config.call_args.args[0]
+        assert called_path.endswith('evaluation/locomo/config.yaml')

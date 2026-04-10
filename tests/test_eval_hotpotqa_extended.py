@@ -393,3 +393,56 @@ class TestProcessSampleEdgeCases:
             )
 
             assert result["f1"] == 0.0
+
+
+class TestMain:
+    @patch("evaluation.hotpotqa.eval_hotpotqa.tqdm", side_effect=lambda items, **_: items)
+    @patch("evaluation.hotpotqa.eval_hotpotqa.process_sample")
+    @patch("evaluation.hotpotqa.eval_hotpotqa.load_hotpotqa")
+    @patch("evaluation.hotpotqa.eval_hotpotqa.setup_logger")
+    @patch("evaluation.hotpotqa.eval_hotpotqa.ensure_app_config")
+    @patch("evaluation.hotpotqa.eval_hotpotqa.load_raw_config")
+    def test_main_uses_benchmark_local_default_config(
+        self,
+        mock_load_raw_config,
+        mock_ensure_app_config,
+        mock_setup_logger,
+        mock_load_hotpotqa,
+        mock_process_sample,
+        mock_tqdm,
+    ):
+        import sys
+
+        from evaluation.hotpotqa.eval_hotpotqa import main
+
+        mock_load_raw_config.return_value = {"model": {}, "hotpotqa_eval": {}, "logging": {}}
+
+        app_config = Mock()
+        app_config.model.get_question_answer_openai_config.return_value.model_dump.return_value = {
+            "api_key": "test-key",
+            "base_url": "http://test",
+            "model": "test-model",
+        }
+        app_config.hotpotqa_eval.dataset_path = "evaluation/eval_data/hotpotqa/eval_50.json"
+        app_config.hotpotqa_eval.ratio = 1.0
+        app_config.hotpotqa_eval.output_dir = "evaluation/hotpotqa/results"
+        app_config.hotpotqa_eval.max_tokens_per_chunk = 1024
+        app_config.logging.log_dir = "evaluation/hotpotqa/logs"
+        app_config.get_runtime_model_summary.return_value = {
+            "memory_agent_model": "test-model",
+        }
+        mock_ensure_app_config.return_value = app_config
+
+        mock_setup_logger.return_value = Mock()
+        mock_load_hotpotqa.return_value = [
+            {"_id": "hotpotqa-0", "index": 0, "context": "ctx", "input": "q", "answers": ["a"]}
+        ]
+        mock_process_sample.return_value = {"sample_id": "hotpotqa-0", "f1": 1.0}
+
+        with patch.object(sys, "argv", ["eval_hotpotqa.py"]):
+            with patch("os.makedirs"):
+                with patch("builtins.open", create=True):
+                    main()
+
+        called_path = mock_load_raw_config.call_args.args[0]
+        assert called_path.endswith("evaluation/hotpotqa/config.yaml")

@@ -10,7 +10,7 @@ PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 cd "$PROJECT_ROOT" || exit 1
 
 # Run evaluation from project root, passing all arguments
-uv run python evaluation/hotpotqa/eval_hotpotqa.py \
+uv run python -m evaluation.hotpotqa.eval_hotpotqa \
     --config "./evaluation/hotpotqa/config.yaml" \
     "$@"
 

@@ -36,6 +36,12 @@ class TestLoadRawConfig:
             result = load_raw_config(config_path)
             assert result == {}
 
+    def test_load_missing_config_can_be_silent(self, caplog):
+        """Test missing config warning can be suppressed for import-time init."""
+        result = load_raw_config("/tmp/definitely-missing-config.yaml", warn_if_missing=False)
+        assert result == {}
+        assert "Config file not found" not in caplog.text
+
     def test_load_valid_config(self):
         """Test loading valid config file."""
         with tempfile.TemporaryDirectory() as tmpdir:

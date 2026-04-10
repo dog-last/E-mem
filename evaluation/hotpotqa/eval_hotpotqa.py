@@ -12,7 +12,6 @@ import logging
 import os
 import re
 import string
-import sys
 from collections import Counter
 
 # Add project root to path
@@ -24,10 +23,12 @@ import torch
 from openai import OpenAI
 from tqdm import tqdm
 
-sys.path.append(str(Path(__file__).parent.parent.parent))
-
 from config import ensure_app_config, load_raw_config
+from evaluation.config_utils import resolve_eval_config_path
 from src.conversation_manager.factory import create_chat_manager
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+DEFAULT_CONFIG_PATH = "evaluation/hotpotqa/config.yaml"
 
 
 # hotpotqa needs more careful management of cuda memory, in case of OOM errors
@@ -504,9 +505,10 @@ def main():
     from datetime import datetime
 
     parser = argparse.ArgumentParser(description="KV-Cached Memory Agent + HotpotQA Evaluation")
-    parser.add_argument("--config", type=str, default="config.yaml", help="Path to config file")
+    parser.add_argument("--config", type=str, default=DEFAULT_CONFIG_PATH, help="Path to config file")
     parser.add_argument("--start-idx", type=int, default=0, help="Start sample index")
     parser.add_argument("--end-idx", type=int, default=None, help="End sample index (exclusive)")
+    parser.add_argument("--ratio", type=float, default=None, help="Override evaluation ratio")
     
     # Working Generator configuration (for final answer generation)
     parser.add_argument("--working-api-key", type=str, default=None, help="Working model API Key")
@@ -516,15 +518,10 @@ def main():
     args = parser.parse_args()
     
     # Load config
-    config_path = args.config
-    if not os.path.isabs(config_path):
-        hotpotqa_config = os.path.join(Path(__file__).parent, config_path)
-        if os.path.exists(hotpotqa_config):
-            config_path = hotpotqa_config
-        else:
-            config_path = os.path.join(Path(__file__).parent.parent.parent, config_path)
-    
+    config_path = resolve_eval_config_path(__file__, args.config)
     config = load_raw_config(config_path)
+    if args.ratio is not None:
+        config.setdefault("hotpotqa_eval", {})["ratio"] = args.ratio
     app_config = ensure_app_config(config)
 
     # Override working model config if provided
@@ -540,8 +537,7 @@ def main():
     
     log_dir = app_config.logging.log_dir
     if not os.path.isabs(log_dir):
-        project_root = Path(__file__).parent.parent.parent
-        log_dir = os.path.join(project_root, log_dir)
+        log_dir = os.path.join(PROJECT_ROOT, log_dir)
     os.makedirs(log_dir, exist_ok=True)
     
     log_file = os.path.join(log_dir, f"hotpotqa_eval_{timestamp}.log")
@@ -555,8 +551,7 @@ def main():
     # Load data
     dataset_path = app_config.hotpotqa_eval.dataset_path
     if not os.path.isabs(dataset_path):
-        project_root = Path(__file__).parent.parent.parent
-        dataset_path = os.path.join(project_root, dataset_path)
+        dataset_path = os.path.join(PROJECT_ROOT, dataset_path)
     
     logger.info(f"Dataset: {dataset_path}")
     all_samples = load_hotpotqa(dataset_path)
@@ -589,8 +584,7 @@ def main():
     # Process samples
     outdir = app_config.hotpotqa_eval.output_dir
     if not os.path.isabs(outdir):
-        project_root = Path(__file__).parent.parent.parent
-        outdir = os.path.join(project_root, outdir)
+        outdir = os.path.join(PROJECT_ROOT, outdir)
     
     max_tokens = app_config.hotpotqa_eval.max_tokens_per_chunk
     

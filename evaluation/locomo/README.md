@@ -17,6 +17,8 @@ cp evaluation/locomo/config.kv.yaml evaluation/locomo/config.yaml
 - **Memory settings**: storage mode, cache behavior, router prompts
 - **Evaluation settings**: dataset path, output directory, ratio
 
+The repository-root `config.yaml` is for quickstart/examples. `bash scripts/eval_locomo.sh` defaults to `evaluation/locomo/config.yaml`.
+
 If you are not sure what each `model.*` field means, read [Config Model Roles](../../docs/CONFIG_MODELS.md) first.
 If you want the meaning of the memory, router, evaluation, or logging fields, read [Config Reference](../../docs/CONFIG_REFERENCE.md).
 
