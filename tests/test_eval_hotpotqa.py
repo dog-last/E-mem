@@ -160,11 +160,14 @@ class TestProcessSample:
         }
         
         config = {
+            "tokenizer": {"model_id": "test-model"},
             "memory": {"storage_mode": "text"},
             "model": {
-                "model_id": "test-model",
-                "openai_config": {"api_key": "test", "base_url": "http://test"},
-                "model_context_window": 32768
+                "memory_agent_model": {
+                    "openai_config": {"api_key": "test", "base_url": "http://test"},
+                    "model_context_window": 32768,
+                },
+                "general_model": {"openai_config": {"api_key": "test", "base_url": "http://test"}},
             }
         }
         
@@ -194,11 +197,14 @@ class TestProcessSample:
         }
         
         config = {
+            "tokenizer": {"model_id": "test-model"},
             "memory": {"storage_mode": "text"},
             "model": {
-                "model_id": "test-model",
-                "openai_config": {"api_key": "test", "base_url": "http://test"},
-                "model_context_window": 32768
+                "memory_agent_model": {
+                    "openai_config": {"api_key": "test", "base_url": "http://test"},
+                    "model_context_window": 32768,
+                },
+                "general_model": {"openai_config": {"api_key": "test", "base_url": "http://test"}},
             }
         }
         

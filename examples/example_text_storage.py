@@ -2,23 +2,18 @@
 import sys
 from pathlib import Path
 
-import yaml
-
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from config import load_validated_config
 from src.conversation_manager.factory import create_chat_manager
 
 # Load config
 try:
     project_root = Path(__file__).parent.parent
     config_path = project_root / 'config.yaml'
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    MODEL_ID = config['model']['model_id']
-    OPENAI_CONFIG = config['model']['openai_config']
-    MODEL_CONTEXT_WINDOW = config['model']['model_context_window']
-    ROUTER_SYSTEM_PROMPT = config['memory'].get('router_system_prompt')
+    APP_CONFIG = load_validated_config(str(config_path))
+    CHAT_MANAGER_KWARGS = APP_CONFIG.to_chat_manager_kwargs()
 except Exception as e:
     print(f"Error loading config: {e}")
     exit(1)
@@ -30,16 +25,10 @@ def main():
     print("=" * 60)
     
     # Create text storage manager
-    OVERLAP_MODE = config['memory'].get('overlap_mode', 'chunk')
-    manager = create_chat_manager(
-        storage_mode="text",
-        model_id=MODEL_ID,
-        openai_config=OPENAI_CONFIG,
-        model_context_window=MODEL_CONTEXT_WINDOW,
-        router_system_prompt=ROUTER_SYSTEM_PROMPT,
-        clean_cache_first=True,
-        overlap_mode=OVERLAP_MODE
-    )
+    manager_kwargs = CHAT_MANAGER_KWARGS.copy()
+    manager_kwargs["storage_mode"] = "text"
+    manager_kwargs["clean_cache_first"] = True
+    manager = create_chat_manager(**manager_kwargs)
     
     print("\n1. Adding memories...")
     memories = [

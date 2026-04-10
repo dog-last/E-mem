@@ -29,7 +29,15 @@ from src.conversation_manager import create_chat_manager
 manager = create_chat_manager(
     storage_mode="text",
     model_id="Qwen/Qwen3-4B",  
-    openai_config={
+    chat_openai_config={
+        "api_key": "your-key",
+        "base_url": "https://api.openai.com/v1"
+    },
+    aggregator_openai_config={
+        "api_key": "your-key",
+        "base_url": "https://api.openai.com/v1"
+    },
+    memory_agent_openai_config={
         "api_key": "your-key",
         "base_url": "https://api.openai.com/v1"
     }
@@ -89,11 +97,30 @@ The system automatically tracks the `model_id` for every memory block.
 
 ## 4. Configuration Guide
 
-Configuration is handled via `config.yaml` or Pydantic objects.
+Configuration is handled via `config.yaml` or Pydantic objects. Start from either [`config.kv.yaml`](../config.kv.yaml) or [`config.text.yaml`](../config.text.yaml), then copy the one you want to `config.yaml`.
+
+If you are unsure what each model field means, read [Config Model Roles](CONFIG_MODELS.md) before editing the config. That page explains exactly how `memory_agent_model` and `general_model` work, and how the optional role overrides inherit from `general_model`.
+
+If you want the meaning of the memory, router, evaluation, or logging fields, read [Config Reference](CONFIG_REFERENCE.md).
+
+The short mapping is:
+
+- `memory_agent_model`: the memory block model itself
+- `general_model`: the default non-memory LLM for the rest of the pipeline
+- `manager_model`: optional override for the top-level chat / tool-calling model
+- `aggregator_model`: optional override for the model that merges retrieved memories
+- `router_fallback_model`: optional override for the router LLM fallback
+- `question_answer_model`: optional override for the evaluation-only final answer model
+
+If an override is omitted or set to `null`, E-mem uses `general_model`.
 
 ### Key Parameters (`config.yaml`)
 
 ```yaml
+model:
+  memory_agent_model:
+    model_context_window: 32768
+
 memory:
   storage_mode: "kv_cache"      # or "text"
   max_blocks: 5                 # Max blocks to retrieve per query
@@ -107,7 +134,7 @@ memory:
     bm25_weight: 0.3            # Keyword Matching
     bm25_boost_threshold: 0.8   # Force include block if keyword match is strong
 ```
- For more information, see the [*API Reference Doc*](API_REFERENCE.md) and the `config.example.yaml`. 
+For more information, see the [API Reference](API_REFERENCE.md), [Config Model Roles](CONFIG_MODELS.md), [Config Reference](CONFIG_REFERENCE.md), [KV example config](../config.kv.yaml), and [text example config](../config.text.yaml).
 
 ### Validation
 All config is validated at runtime. Invalid values (e.g., weights not summing to ~1.0, invalid paths) will raise a `ConfigurationError` immediately.

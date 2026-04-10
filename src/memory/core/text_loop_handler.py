@@ -144,6 +144,7 @@ class TextMemoryHandler:
         self,
         model_id: str,
         openai_config: dict,
+        router_openai_config: Optional[dict] = None,
         clean_cache_first: bool = True,
         model_context_window: int = 32768,
         router_system_prompt: Optional[str] = None,
@@ -163,7 +164,8 @@ class TextMemoryHandler:
         
         Args:
             model_id: HuggingFace model ID (used for tokenization).
-            openai_config: OpenAI API configuration for all LLM operations.
+            openai_config: OpenAI API configuration for text memory agents.
+            router_openai_config: Optional router-specific OpenAI API configuration.
             clean_cache_first: Whether to clean cache on initialization.
             model_context_window: Model's context window size.
             router_system_prompt: Custom router system prompt.
@@ -179,6 +181,7 @@ class TextMemoryHandler:
         logger.info(f"Initializing TextMemoryHandler with model: {model_id}, router_type: {router_type}")
         self.model_id = model_id
         self.openai_config = openai_config
+        self.router_openai_config = router_openai_config or openai_config
         self.model_context_window = model_context_window
         self.block_size_ratio = block_size_ratio
         self.add_handler = TextAddHandler(
@@ -196,7 +199,7 @@ class TextMemoryHandler:
             # Use hybrid router (embedding + BM25)
             hybrid_config = hybrid_router_config or {}
             router_kwargs: Dict[str, Any] = {
-                "openai_config": openai_config,
+                "openai_config": self.router_openai_config,
                 "max_memory_segments": max_memory_segments,
                 "max_blocks": max_blocks,
                 "enable_router": enable_router,
@@ -214,6 +217,7 @@ class TextMemoryHandler:
                 "text_chunk_overlap": hybrid_config.get("text_chunk_overlap", 50),
                 "use_llm_fallback": hybrid_config.get("use_llm_fallback", False),
                 "bm25_use_jieba": hybrid_config.get("bm25_use_jieba", True),
+                "bm25_boost_threshold": hybrid_config.get("bm25_boost_threshold"),
             }
             if router_system_prompt is not None:
                 router_kwargs["system_prompt"] = router_system_prompt
@@ -223,7 +227,7 @@ class TextMemoryHandler:
         else:
             # Use LLM-based router (legacy)
             router_kwargs = {
-                "openai_config": openai_config,
+                "openai_config": self.router_openai_config,
                 "max_memory_segments": max_memory_segments,
                 "max_blocks": max_blocks,
                 "enable_router": enable_router,

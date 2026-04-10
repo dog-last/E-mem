@@ -45,7 +45,9 @@ class ChatManager(BaseChatManager):
     def __init__(
         self,
         model_id: str,
-        openai_config: Optional[Dict[str, Any]] = None,
+        chat_openai_config: Dict[str, Any],
+        aggregator_openai_config: Dict[str, Any],
+        router_openai_config: Optional[Dict[str, Any]] = None,
         system_prompt: str = CHAT_SYS_PROMPT,
         clean_cache_first: bool = True,
         model_context_window: int = 32768,
@@ -66,7 +68,11 @@ class ChatManager(BaseChatManager):
         router_type: str = "hybrid",
         hybrid_router_config: Optional[Dict[str, Any]] = None,
     ) -> None:
-        super().__init__(openai_config, system_prompt)
+        super().__init__(
+            chat_openai_config,
+            aggregator_openai_config=aggregator_openai_config,
+            system_prompt=system_prompt,
+        )
         self._name = "chat_manager"
 
         logger.info(f"Initializing ChatManager with model: {model_id}")
@@ -78,7 +84,7 @@ class ChatManager(BaseChatManager):
         # Build memory handler kwargs
         memory_kwargs: Dict[str, Any] = {
             "model_id": model_id,
-            "openai_config": openai_config,
+            "openai_config": router_openai_config,
             "clean_cache_first": clean_cache_first,
             "model_context_window": model_context_window,
             "attn_implementation": attn_implementation,
@@ -144,7 +150,10 @@ class TextStorageChatManager(BaseChatManager):
     def __init__(
         self,
         model_id: str,
-        openai_config: Optional[Dict[str, Any]] = None,
+        chat_openai_config: Dict[str, Any],
+        aggregator_openai_config: Dict[str, Any],
+        memory_agent_openai_config: Dict[str, Any],
+        router_openai_config: Optional[Dict[str, Any]] = None,
         system_prompt: str = CHAT_SYS_PROMPT,
         clean_cache_first: bool = True,
         model_context_window: int = 32768,
@@ -158,7 +167,11 @@ class TextStorageChatManager(BaseChatManager):
         router_type: str = "hybrid",
         hybrid_router_config: Optional[Dict[str, Any]] = None,
     ) -> None:
-        super().__init__(openai_config, system_prompt)
+        super().__init__(
+            chat_openai_config,
+            aggregator_openai_config=aggregator_openai_config,
+            system_prompt=system_prompt,
+        )
         self._name = "text_chat_manager"
 
         logger.info(f"Initializing TextStorageChatManager with model: {model_id}")
@@ -169,7 +182,8 @@ class TextStorageChatManager(BaseChatManager):
 
         memory_kwargs: Dict[str, Any] = {
             "model_id": model_id,
-            "openai_config": openai_config,
+            "openai_config": memory_agent_openai_config,
+            "router_openai_config": router_openai_config,
             "clean_cache_first": clean_cache_first,
             "model_context_window": model_context_window,
             "overlap_ratio": overlap_ratio,

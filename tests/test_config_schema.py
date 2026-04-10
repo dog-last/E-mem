@@ -48,27 +48,66 @@ class TestModelConfig:
     def test_valid_config(self):
         """Test valid model configuration."""
         config = ModelConfig(
-            model_id="Qwen/Qwen3-4B",
-            openai_config=OpenAIConfig(api_key="test-key"),
+            memory_agent_model={
+                "model_id": "Qwen/Qwen3-4B",
+                "model_context_window": 32768,
+            },
+            general_model={"openai_config": {"api_key": "test-key"}},
         )
-        assert config.model_id == "Qwen/Qwen3-4B"
-        assert config.model_context_window == 32768
-        assert config.attn_implementation == "sdpa"
-        assert config.device_map == "auto"
+        assert config.memory_agent_model.model_id == "Qwen/Qwen3-4B"
+        assert config.memory_agent_model.model_context_window == 32768
+        assert config.memory_agent_model.attn_implementation == "sdpa"
+        assert config.memory_agent_model.device_map == "auto"
 
-    def test_missing_model_id_fails(self):
-        """Test that missing model_id raises error."""
-        with pytest.raises(ValidationError):
-            ModelConfig(openai_config=OpenAIConfig(api_key="test-key"))
+    def test_role_based_config_defaults_to_general_model(self):
+        """Test that role configs fall back to general_model."""
+        config = ModelConfig(
+            memory_agent_model={
+                "model_id": "Qwen/Qwen3-4B",
+                "model_context_window": 32768,
+            },
+            general_model={"openai_config": {"api_key": "test-key", "model": "general"}},
+        )
+        assert config.get_memory_agent_config().model_id == "Qwen/Qwen3-4B"
+        assert config.get_manager_openai_config().api_key == "test-key"
+        assert config.get_manager_openai_config().model == "general"
+        assert config.get_aggregator_openai_config().model == "general"
+        assert config.get_question_answer_openai_config().model == "general"
+        assert config.get_router_openai_config().model == "general"
+
+    def test_role_overrides_take_precedence(self):
+        """Test that optional role overrides override general_model."""
+        config = ModelConfig(
+            memory_agent_model={"model_id": "Qwen/Qwen3-4B"},
+            general_model={"openai_config": {"api_key": "test-key", "model": "general"}},
+            aggregator_model={
+                "openai_config": {"api_key": "test-key", "model": "aggregator"}
+            },
+        )
+        assert config.get_manager_openai_config().model == "general"
+        assert config.get_aggregator_openai_config().model == "aggregator"
 
     def test_with_quantization_config(self):
         """Test model config with quantization."""
         config = ModelConfig(
-            model_id="test-model",
-            openai_config=OpenAIConfig(api_key="test-key"),
-            quantization_config={"load_in_4bit": True},
+            memory_agent_model={
+                "model_id": "test-model",
+                "quantization_config": {"load_in_4bit": True},
+            },
+            general_model={"openai_config": {"api_key": "test-key"}},
         )
-        assert config.quantization_config == {"load_in_4bit": True}
+        assert config.memory_agent_model.quantization_config == {"load_in_4bit": True}
+
+    def test_memory_agent_model_context_window(self):
+        """Test role-specific memory agent context window."""
+        config = ModelConfig(
+            memory_agent_model={
+                "model_id": "test-model",
+                "model_context_window": 65536,
+            },
+            general_model={"openai_config": {"api_key": "test-key"}},
+        )
+        assert config.get_memory_agent_config().model_context_window == 65536
 
 
 class TestMemoryConfig:
@@ -129,8 +168,8 @@ class TestMemoryConfig:
         with pytest.raises(ValidationError):
             AppConfig(
                 model=ModelConfig(
-                    model_id="test",
-                    openai_config=OpenAIConfig(api_key="test"),
+                    memory_agent_model={"model_id": "test"},
+                    general_model={"openai_config": {"api_key": "test"}},
                 ),
                 memory=MemoryConfig(block_size_ratio=0.8, overlap_ratio=0.2),
             )
@@ -220,9 +259,11 @@ class TestAppConfig:
     def test_valid_full_config(self):
         """Test valid full application configuration."""
         config = AppConfig(
+            tokenizer={"model_id": "test-model"},
             model=ModelConfig(
-                model_id="test-model",
-                openai_config=OpenAIConfig(api_key="test-key"),
+                memory_agent_model={"model_id": "test-model"},
+                general_model={"openai_config": {"api_key": "test-key"}},
+                question_answer_model={"openai_config": {"api_key": "test-key"}},
             ),
             memory=MemoryConfig(),
             locomo_eval=LocomoEvalConfig(
@@ -233,15 +274,17 @@ class TestAppConfig:
             ),
             logging=LoggingConfig(log_dir="logs/"),
         )
-        assert config.model.model_id == "test-model"
+        assert config.model.memory_agent_model.model_id == "test-model"
         assert config.memory.storage_mode == "kv_cache"
 
     def test_with_max_memory(self):
         """Test config with max_memory."""
         config = AppConfig(
+            tokenizer={"model_id": "test-model"},
             model=ModelConfig(
-                model_id="test-model",
-                openai_config=OpenAIConfig(api_key="test-key"),
+                memory_agent_model={"model_id": "test-model"},
+                general_model={"openai_config": {"api_key": "test-key"}},
+                question_answer_model={"openai_config": {"api_key": "test-key"}},
             ),
             max_memory={"0": "20GB", "1": "20GB"},
             memory=MemoryConfig(),
@@ -259,14 +302,64 @@ class TestAppConfig:
         """Test minimal valid configuration (optional fields use defaults)."""
         config = AppConfig(
             model=ModelConfig(
-                model_id="test-model",
-                openai_config=OpenAIConfig(api_key="test-key"),
+                memory_agent_model={"model_id": "test-model"},
+                general_model={"openai_config": {"api_key": "test-key"}},
             ),
         )
-        assert config.model.model_id == "test-model"
+        assert config.model.memory_agent_model.model_id == "test-model"
         assert config.memory.storage_mode == "kv_cache"
         assert config.locomo_eval is None
         assert config.hotpotqa_eval is None
+
+    def test_evaluation_uses_general_model_when_qa_override_missing(self):
+        """Test evaluation configs can rely on general_model for final answers."""
+        config = AppConfig(
+            tokenizer={"model_id": "test-model"},
+            model=ModelConfig(
+                memory_agent_model={"model_id": "test-model"},
+                general_model={
+                    "openai_config": {"api_key": "test-key", "model": "general-qa"}
+                },
+            ),
+            locomo_eval=LocomoEvalConfig(
+                dataset_path="data.json", output_dir="out/"
+            ),
+        )
+        assert config.model.get_question_answer_openai_config().model == "general-qa"
+
+    def test_to_chat_manager_kwargs_uses_general_model_defaults(self):
+        """Test runtime kwargs inherit manager/aggregator/router from general_model."""
+        config = AppConfig(
+            tokenizer={"model_id": "test-model"},
+            model=ModelConfig(
+                memory_agent_model={"model_id": "test-model"},
+                general_model={
+                    "openai_config": {"api_key": "test-key", "model": "general"}
+                },
+            ),
+        )
+        kwargs = config.to_chat_manager_kwargs()
+        assert kwargs["chat_openai_config"]["model"] == "general"
+        assert kwargs["aggregator_openai_config"]["model"] == "general"
+        assert kwargs["router_openai_config"]["model"] == "general"
+
+    def test_to_chat_manager_kwargs_uses_role_override_when_present(self):
+        """Test runtime kwargs prefer role overrides over general_model."""
+        config = AppConfig(
+            tokenizer={"model_id": "test-model"},
+            model=ModelConfig(
+                memory_agent_model={"model_id": "test-model"},
+                general_model={
+                    "openai_config": {"api_key": "test-key", "model": "general"}
+                },
+                aggregator_model={
+                    "openai_config": {"api_key": "test-key", "model": "agg"}
+                },
+            ),
+        )
+        kwargs = config.to_chat_manager_kwargs()
+        assert kwargs["chat_openai_config"]["model"] == "general"
+        assert kwargs["aggregator_openai_config"]["model"] == "agg"
 
 
 class TestLoadAndValidateConfig:
@@ -276,8 +369,9 @@ class TestLoadAndValidateConfig:
         """Test loading valid configuration."""
         raw_config = {
             "model": {
-                "model_id": "test-model",
-                "openai_config": {"api_key": "test-key"},
+                "memory_agent_model": {"model_id": "test-model"},
+                "general_model": {"openai_config": {"api_key": "test-key"}},
+                "question_answer_model": {"openai_config": {"api_key": "test-key"}},
             },
             "memory": {"storage_mode": "kv_cache"},
             "locomo_eval": {"dataset_path": "data.json", "output_dir": "out/"},
@@ -286,14 +380,13 @@ class TestLoadAndValidateConfig:
         }
         config = load_and_validate_config(raw_config)
         assert isinstance(config, AppConfig)
-        assert config.model.model_id == "test-model"
+        assert config.model.memory_agent_model.model_id == "test-model"
 
     def test_load_invalid_config_raises_error(self):
         """Test that invalid config raises ValidationError."""
         raw_config = {
             "model": {
-                # Missing required model_id
-                "openai_config": {"api_key": "test-key"},
+                "general_model": {"openai_config": {"api_key": "test-key"}},
             },
             "memory": {},
             "locomo_eval": {"dataset_path": "data.json", "output_dir": "out/"},
@@ -307,12 +400,12 @@ class TestLoadAndValidateConfig:
         """Test loading minimal configuration."""
         raw_config = {
             "model": {
-                "model_id": "test-model",
-                "openai_config": {"api_key": "test-key"},
+                "memory_agent_model": {"model_id": "test-model"},
+                "general_model": {"openai_config": {"api_key": "test-key"}},
             },
         }
         config = load_and_validate_config(raw_config)
-        assert config.model.model_id == "test-model"
+        assert config.model.memory_agent_model.model_id == "test-model"
         assert config.memory.storage_mode == "kv_cache"  # Default
 
 
@@ -334,4 +427,3 @@ class TestValidateHelpers:
         config = validate_memory_config({"storage_mode": "text"})
         assert config.storage_mode == "text"
         assert config.overlap_ratio == 0.1
-

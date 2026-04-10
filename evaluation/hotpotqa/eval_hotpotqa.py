@@ -26,6 +26,7 @@ from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
+from config import ensure_app_config, load_raw_config
 from src.conversation_manager.factory import create_chat_manager
 
 
@@ -237,6 +238,8 @@ def process_sample(
     """Process a single sample using KV-Cached Memory Agent"""
     if logger is None:
         logger = logging.getLogger('hotpotqa_eval')
+
+    app_config = ensure_app_config(config)
         
     sample_id = sample.get("_id", f"sample-{sample_index}")
     
@@ -260,31 +263,9 @@ def process_sample(
         
         # 2. Create ChatManager with clean cache
         logger.info("\nStep 1: Create ChatManager")
-        storage_mode = config['memory'].get('storage_mode', 'kv_cache')
-        agent = create_chat_manager(
-            storage_mode=storage_mode,
-            model_id=config['model']['model_id'],
-            openai_config=config['model']['openai_config'],
-            clean_cache_first=True,
-            model_context_window=config['model']['model_context_window'],
-            attn_implementation=config['model'].get('attn_implementation', 'sdpa'),
-            device_map=config['model'].get('device_map', 'auto'),
-            router_system_prompt=config['memory'].get('router_system_prompt'),
-            quantization_config=config['model'].get('quantization_config'),
-            overlap_mode=config['memory'].get('overlap_mode', 'chunk'),
-            overlap_ratio=config['memory'].get('overlap_ratio', 0.1),
-            block_size_ratio=config['memory'].get('block_size_ratio', 0.125),
-            max_memory=config.get('max_memory'),
-            max_memory_segments=config['memory'].get('max_memory_segments'),
-            max_blocks=config['memory'].get('max_blocks', 5),
-            # Batch inference parameters for GPU parallelism
-            query_batch_size=config['memory'].get('query_batch_size', 4),
-            max_parallel_cache_loads=config['memory'].get('max_parallel_cache_loads', 8),
-            enable_router=config['memory'].get('enable_router', True),
-            # Router type and hybrid router configuration
-            router_type=config['memory'].get('router_type', 'hybrid'),
-            hybrid_router_config=config['memory'].get('hybrid_router'),
-        )
+        runtime_kwargs = app_config.to_chat_manager_kwargs()
+        runtime_kwargs["clean_cache_first"] = True
+        agent = create_chat_manager(**runtime_kwargs)
         logger.info("[OK] ChatManager created")
         
         # 3. Add context chunks to memory
@@ -522,8 +503,6 @@ def main():
     import argparse
     from datetime import datetime
 
-    import yaml
-    
     parser = argparse.ArgumentParser(description="KV-Cached Memory Agent + HotpotQA Evaluation")
     parser.add_argument("--config", type=str, default="config.yaml", help="Path to config file")
     parser.add_argument("--start-idx", type=int, default=0, help="Start sample index")
@@ -545,20 +524,21 @@ def main():
         else:
             config_path = os.path.join(Path(__file__).parent.parent.parent, config_path)
     
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    
+    config = load_raw_config(config_path)
+    app_config = ensure_app_config(config)
+
     # Override working model config if provided
-    working_api_key = args.working_api_key or config['model']['openai_config']['api_key']
-    working_base_url = args.working_base_url or config['model']['openai_config']['base_url']
-    working_model = args.working_model or config['model']['openai_config']['model']
+    question_answer_config = app_config.model.get_question_answer_openai_config().model_dump()
+    working_api_key = args.working_api_key or question_answer_config['api_key']
+    working_base_url = args.working_base_url or question_answer_config['base_url']
+    working_model = args.working_model or question_answer_config['model']
     
     # Setup logging
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     session_id = f"hotpotqa_{timestamp}"
     os.environ['EVAL_SESSION_ID'] = session_id
     
-    log_dir = config['logging']['log_dir']
+    log_dir = app_config.logging.log_dir
     if not os.path.isabs(log_dir):
         project_root = Path(__file__).parent.parent.parent
         log_dir = os.path.join(project_root, log_dir)
@@ -573,7 +553,7 @@ def main():
     logger.info("=" * 60)
     
     # Load data
-    dataset_path = config['hotpotqa_eval']['dataset_path']
+    dataset_path = app_config.hotpotqa_eval.dataset_path
     if not os.path.isabs(dataset_path):
         project_root = Path(__file__).parent.parent.parent
         dataset_path = os.path.join(project_root, dataset_path)
@@ -587,7 +567,7 @@ def main():
         args.end_idx = len(all_samples)
     
     # Apply ratio
-    ratio = config['hotpotqa_eval'].get('ratio', 1.0)
+    ratio = app_config.hotpotqa_eval.ratio
     if ratio < 1.0:
         args.end_idx = min(args.end_idx, max(1, int(len(all_samples) * ratio)))
     
@@ -607,12 +587,12 @@ def main():
         return
     
     # Process samples
-    outdir = config['hotpotqa_eval']['output_dir']
+    outdir = app_config.hotpotqa_eval.output_dir
     if not os.path.isabs(outdir):
         project_root = Path(__file__).parent.parent.parent
         outdir = os.path.join(project_root, outdir)
     
-    max_tokens = config['hotpotqa_eval'].get('max_tokens_per_chunk', 2000)
+    max_tokens = app_config.hotpotqa_eval.max_tokens_per_chunk
     
     sample_indices = list(range(args.start_idx, args.end_idx))
     logger.info("Starting serial processing of samples...")
@@ -638,7 +618,7 @@ def main():
                 working_api_key,
                 working_base_url,
                 working_model,
-                config,
+                app_config,
                 max_tokens=max_tokens,
                 logger=logger
             )
@@ -664,12 +644,21 @@ def main():
     
     # Calculate statistics
     f1_scores = [r["f1"] for r in all_results if "f1" in r]
+    runtime_models = app_config.get_runtime_model_summary()
     
     if all_results:
         os.makedirs(outdir, exist_ok=True)
+        batch_results_payload = {
+            "model": runtime_models["memory_agent_model"],
+            "models": runtime_models,
+            "dataset": dataset_path,
+            "start_idx": args.start_idx,
+            "end_idx": args.end_idx - 1,
+            "individual_results": all_results,
+        }
         summary_file = os.path.join(outdir, f"batch_results_{args.start_idx}_{args.end_idx-1}.json")
         with open(summary_file, 'w', encoding='utf-8') as f:
-            json.dump(all_results, f, ensure_ascii=False, indent=2)
+            json.dump(batch_results_payload, f, ensure_ascii=False, indent=2)
         logger.info(f"[OK] Batch results summary saved: {summary_file}")
         
         if f1_scores:
@@ -678,6 +667,9 @@ def main():
             success_count = len(f1_scores)
             
             statistics = {
+                "model": runtime_models["memory_agent_model"],
+                "models": runtime_models,
+                "dataset": dataset_path,
                 "total_samples": total_samples,
                 "success_count": success_count,
                 "failed_count": total_samples - success_count,

@@ -2,6 +2,8 @@
 
 This reference documents the core Python API for E-mem, focusing on initialization and configuration.
 
+If you want a conceptual explanation of which config model field controls which runtime stage, see [Config Model Roles](CONFIG_MODELS.md). If you want the rest of the YAML fields explained, see [Config Reference](CONFIG_REFERENCE.md).
+
 ## Initialization
 
 ### `create_chat_manager`
@@ -12,7 +14,10 @@ The primary entry point for initializing the system. Supports both KV Cache (GPU
 def create_chat_manager(
     storage_mode: Literal["kv_cache", "text"] = "kv_cache",
     model_id: str = "Qwen/Qwen3-4B",
-    openai_config: Optional[Dict[str, Any]] = None,
+    chat_openai_config: Optional[Dict[str, Any]] = None,
+    aggregator_openai_config: Optional[Dict[str, Any]] = None,
+    memory_agent_openai_config: Optional[Dict[str, Any]] = None,
+    router_openai_config: Optional[Dict[str, Any]] = None,
     clean_cache_first: bool = True,
     model_context_window: int = 32768,
     router_system_prompt: Optional[str] = None,
@@ -36,7 +41,10 @@ def create_chat_manager(
 |----------|------|---------|-------------|
 | `storage_mode` | `str` | `"kv_cache"` | `"kv_cache"` for GPU tensor storage; `"text"` for JSON/API storage. |
 | `model_id` | `str` | `"Qwen/Qwen3-4B"` | HuggingFace model ID or local path. Required for tokenization in both modes. |
-| `openai_config` | `dict` | `None` | Config for LLM generation (`api_key`, `base_url`, `model`). |
+| `chat_openai_config` | `dict` | `None` | Top-level manager/tool-calling model config. |
+| `aggregator_openai_config` | `dict` | `None` | Memory aggregation model config. |
+| `memory_agent_openai_config` | `dict` | `None` | Text-mode memory-agent config. |
+| `router_openai_config` | `dict` | `None` | Router or router-fallback model config. |
 | `clean_cache_first` | `bool` | `True` | **Warning**: If `True`, wipes all data with the same session id in `kv_data/` on startup. |
 | `enable_router` | `bool` | `True` | If `False`, skips retrieval and forces all memory blocks into context (debugging only). |
 | `router_type` | `str` | `"hybrid"` | `"hybrid"` or `"llm"` (legacy). |
@@ -45,6 +53,16 @@ def create_chat_manager(
 | `quantization_config` | `dict` | `None` | HuggingFace quantization config (e.g., bitsandbytes). |
 | `max_memory` | `dict` | `None` | Max memory per GPU device (e.g., `{"0": "20GiB"}`). |
 | `offload_folder` | `str` | `None` | Folder for offloading model weights if GPU is full. |
+
+These runtime arguments correspond to the role-based YAML fields documented in [Config Model Roles](CONFIG_MODELS.md). In particular:
+
+- `memory_agent_openai_config` maps to `model.memory_agent_model.openai_config`
+- `chat_openai_config` maps to `model.general_model.openai_config` by default, or `model.manager_model.openai_config` when overridden
+- `aggregator_openai_config` maps to `model.general_model.openai_config` by default, or `model.aggregator_model.openai_config` when overridden
+- `router_openai_config` maps to `model.general_model.openai_config` by default, or `model.router_fallback_model.openai_config` when overridden
+- `model_id` and `model_context_window` map to the memory-agent model settings
+
+`question_answer_model` is not a `create_chat_manager(...)` argument because it is consumed directly by evaluation scripts.
 
 ---
 

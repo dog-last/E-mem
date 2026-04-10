@@ -27,6 +27,7 @@ from evaluation.locomo.utils import (
     calculate_metrics,
     extract_answer_from_xml,
 )
+from config import ensure_app_config, load_raw_config
 from src.conversation_manager.factory import create_chat_manager
 
 
@@ -107,17 +108,19 @@ def setup_logger(log_file: str) -> logging.Logger:
 
 def evaluate_dataset(config: dict, logger: logging.Logger):
     """Evaluate on LoComo dataset."""
+    app_config = ensure_app_config(config)
+
     # Generate unique session ID for this evaluation run
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_id = config['model']['model_id']
+    model_id = app_config.get_model_label()
     session_id = f"locomo_{os.path.basename(model_id)}_{timestamp}"
     os.environ['EVAL_SESSION_ID'] = session_id
     logger.info(f"Evaluation session ID: {session_id}")
     logger.info("Note: Using session-specific metadata to support concurrent evaluations")
     
     # Load dataset
-    dataset_path = config['locomo_eval']['dataset_path']
+    dataset_path = app_config.locomo_eval.dataset_path
     if not os.path.isabs(dataset_path):
         # Path is relative to project root, not to this file
         project_root = Path(__file__).parent.parent.parent
@@ -128,7 +131,7 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
     logger.info(f"Loaded {len(samples)} samples")
     
     # Check if specific questions should be used
-    specific_questions_path = config['locomo_eval'].get('specific_questions_path')
+    specific_questions_path = app_config.locomo_eval.specific_questions_path
     if specific_questions_path:
         if not os.path.isabs(specific_questions_path):
             project_root = Path(__file__).parent.parent.parent
@@ -143,7 +146,7 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
         logger.info(f"Filtered to {len(samples)} samples with specific questions")
     
     # Apply ratio
-    ratio = config['locomo_eval']['ratio']
+    ratio = app_config.locomo_eval.ratio
     if ratio < 1.0:
         num_samples = max(1, int(len(samples) * ratio))
         samples = samples[:num_samples]
@@ -173,34 +176,10 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
         
         try:
             # Create agent
-            storage_mode = config['memory'].get('storage_mode', 'kv_cache')
-            openai_config = config['model']['openai_config']
-            agent = create_chat_manager(
-                storage_mode=storage_mode,
-                model_id=config['model']['model_id'],
-                openai_config=openai_config,
-                clean_cache_first=config['memory']['clean_cache_first'],
-                model_context_window=config['model']['model_context_window'],
-                attn_implementation=config['model'].get('attn_implementation', 'sdpa'),
-                device_map=config['model'].get('device_map', 'auto'),
-                router_system_prompt=config['memory'].get('router_system_prompt'),
-                quantization_config=config['model'].get('quantization_config'),
-                overlap_mode=config['memory'].get('overlap_mode', 'chunk'),
-                overlap_ratio=config['memory'].get('overlap_ratio', 0.1),
-                block_size_ratio=config['memory'].get('block_size_ratio', 0.125),
-                max_memory=config.get('max_memory'),
-                max_memory_segments=config['memory'].get('max_memory_segments'),
-                max_blocks=config['memory'].get('max_blocks', 5),
-                # Resource control parameters for batch inference
-                query_batch_size=config['memory'].get('query_batch_size', 4),
-                max_parallel_cache_loads=config['memory'].get('max_parallel_cache_loads', 8),
-                enable_router=config['memory'].get('enable_router', True),
-                # Router type and hybrid router configuration
-                router_type=config['memory'].get('router_type', 'hybrid'),
-                hybrid_router_config=config['memory'].get('hybrid_router'),
-            )
+            agent = create_chat_manager(**app_config.to_chat_manager_kwargs())
 
             # Set up working client for final answer generation
+            openai_config = app_config.model.get_question_answer_openai_config().model_dump()
             working_client = OpenAI(
                 api_key=openai_config['api_key'],
                 base_url=openai_config['base_url']
@@ -209,7 +188,7 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
             
             # Store conversations
             logger.info("\n--- Storing Conversation Memories ---")
-            conversation_auto_save = config['locomo_eval'].get('conversation_auto_save', False)
+            conversation_auto_save = app_config.locomo_eval.conversation_auto_save
             
             for session_key, session in sample.conversation.sessions.items():
                 for turn in session.turns:
@@ -227,7 +206,7 @@ def evaluate_dataset(config: dict, logger: logging.Logger):
             
             # Answer questions
             logger.info("\n--- Answering Questions ---")
-            allowed_categories = config['locomo_eval']['categories']
+            allowed_categories = app_config.locomo_eval.categories
             
             for qa in sample.qa:
                 if qa.category not in allowed_categories:
@@ -556,10 +535,12 @@ INSTRUCTIONS:
     
     # Aggregate metrics
     aggregate_results = aggregate_metrics(all_metrics, all_categories)
+    runtime_models = app_config.get_runtime_model_summary()
     
     # Prepare final results
     final_results = {
-        "model": config['model']['model_id'],
+        "model": runtime_models["memory_agent_model"],
+        "models": runtime_models,
         "dataset": dataset_path,
         "total_questions": total_questions,
         "category_distribution": {str(cat): count for cat, count in category_counts.items()},
@@ -569,7 +550,7 @@ INSTRUCTIONS:
     
     # Save results
     timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M")
-    output_dir = config['locomo_eval']['output_dir']
+    output_dir = app_config.locomo_eval.output_dir
     if not os.path.isabs(output_dir):
         project_root = Path(__file__).parent.parent.parent
         output_dir = os.path.join(project_root, output_dir)
@@ -612,18 +593,20 @@ def main():
     if not os.path.isabs(config_path):
         config_path = os.path.join(Path(__file__).parent.parent.parent, config_path)
     
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    
+    config = load_raw_config(config_path)
+
     # Override config with command line args
     if args.model_id:
-        config['model']['model_id'] = args.model_id
+        config.setdefault('tokenizer', {})['model_id'] = args.model_id
+        config.setdefault('model', {}).setdefault('memory_agent_model', {})['model_id'] = args.model_id
     if args.dataset:
         config['locomo_eval']['dataset_path'] = args.dataset
     if args.ratio:
         config['locomo_eval']['ratio'] = args.ratio
     if args.conversation_auto_save:
         config['locomo_eval']['conversation_auto_save'] = True
+
+    app_config = ensure_app_config(config)
     
     # Ensure directories exist (relative to project root)
     project_root = Path(__file__).parent.parent.parent
@@ -632,7 +615,7 @@ def main():
     
     # Setup logging
     timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M")
-    log_dir = config['logging']['log_dir']
+    log_dir = app_config.logging.log_dir
     if not os.path.isabs(log_dir):
         project_root = Path(__file__).parent.parent.parent
         log_dir = os.path.join(project_root, log_dir)
@@ -642,10 +625,10 @@ def main():
     logger = setup_logger(log_file)
     
     logger.info("Starting evaluation")
-    logger.info(f"Config: {config}")
-    
+    logger.info(f"Config: {app_config.model_dump()}")
+
     # Run evaluation
-    evaluate_dataset(config, logger)
+    evaluate_dataset(app_config, logger)
     
     logger.info("\nEvaluation complete!")
 

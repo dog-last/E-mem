@@ -4,6 +4,7 @@ import logging
 from abc import abstractmethod
 from typing import Any, Dict, List, Optional
 
+import src.agent.base as base_agent_module
 from src.agent.base import BaseAgent
 from src.utils.prompt import AGGREGATOR_PROMPT, CHAT_SYS_PROMPT
 
@@ -63,17 +64,26 @@ class BaseChatManager(BaseAgent):
 
     def __init__(
         self,
-        openai_config: Optional[Dict[str, Any]] = None,
+        chat_openai_config: Dict[str, Any],
+        aggregator_openai_config: Dict[str, Any],
         system_prompt: str = CHAT_SYS_PROMPT,
     ) -> None:
         """
         Initialize base chat manager.
 
         Args:
-            openai_config: OpenAI API configuration dictionary.
+            chat_openai_config: OpenAI API configuration dictionary for manager/chat logic.
+            aggregator_openai_config: Dedicated config for aggregation.
             system_prompt: System prompt for the chat agent.
         """
-        super().__init__(openai_config, system_prompt)
+        super().__init__(chat_openai_config, system_prompt)
+        self.aggregator_openai_config = aggregator_openai_config.copy()
+        self.aggregator_model = self.aggregator_openai_config.pop(
+            "model", "gpt-4o-mini"
+        )
+        self.aggregator_llm = base_agent_module.OpenAI(
+            **self.aggregator_openai_config
+        )
         self.last_queried_memory: Optional[str] = None
         self.auto_save: bool = False
         self.save_original_input: bool = False
@@ -236,8 +246,8 @@ class BaseChatManager(BaseAgent):
         prompt = AGGREGATOR_PROMPT.format(query=query, results=raw_results)
 
         try:
-            response = self.llm.chat.completions.create(
-                model=self.model,
+            response = self.aggregator_llm.chat.completions.create(
+                model=self.aggregator_model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=2048,
                 temperature=0,
@@ -246,4 +256,3 @@ class BaseChatManager(BaseAgent):
         except Exception as e:
             logger.error(f"Aggregation failed: {e}", exc_info=True)
             return raw_results  # Fallback to raw results
-

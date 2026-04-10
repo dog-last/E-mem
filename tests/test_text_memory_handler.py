@@ -551,6 +551,43 @@ class TestTextMemoryAgentDirect:
 
     @patch("src.memory.memory_agent.text_agent.AutoTokenizer.from_pretrained")
     @patch("src.agent.base.OpenAI")
+    def test_text_memory_agent_summary_removes_thinking_content(
+        self, mock_openai, mock_tokenizer_class
+    ):
+        """Test TextMemoryAgent strips thinking tags from generated summaries."""
+        from src.memory.memory_agent.text_agent import TextMemoryAgent
+
+        mock_tokenizer = Mock()
+        mock_tokenizer.encode.return_value = [1] * 5000
+        mock_tokenizer_class.return_value = mock_tokenizer
+
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_message = Mock()
+        mock_message.content = (
+            "Summary start <thinking>hidden reasoning</thinking> summary end"
+        )
+        mock_message.tool_calls = None
+        mock_response.choices = [Mock(message=mock_message)]
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        agent = TextMemoryAgent(
+            model_id="test-model",
+            openai_config={"api_key": "test"},
+            model_context_window=8000,
+            block_size_ratio=0.5,
+        )
+
+        agent.add(["Very large chunk that fills the block"])
+
+        assert "<thinking>" not in agent.summary
+        assert "hidden reasoning" not in agent.summary
+        assert "Summary start" in agent.summary
+        assert "summary end" in agent.summary
+
+    @patch("src.memory.memory_agent.text_agent.AutoTokenizer.from_pretrained")
+    @patch("src.agent.base.OpenAI")
     def test_text_memory_agent_add_inactive_raises(self, mock_openai, mock_tokenizer_class):
         """Test TextMemoryAgent add raises error when inactive."""
         from src.memory.memory_agent.text_agent import TextMemoryAgent
@@ -664,4 +701,3 @@ class TestTextMemoryAgentDirect:
 
         # Should have loaded the existing data
         assert agent.current_block.chunk_num == 1
-

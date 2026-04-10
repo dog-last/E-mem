@@ -15,11 +15,30 @@ class OpenAIConfig(BaseModel):
     model: str = Field(default="gpt-4o-mini", description="Model name to use")
 
 
-class ModelConfig(BaseModel):
-    """Model configuration."""
+class TokenizerConfig(BaseModel):
+    """Tokenizer configuration."""
 
-    model_id: str = Field(..., description="HuggingFace model ID or local path")
+    model_id: str = Field(..., description="Tokenizer model ID or local path")
+
+
+class APIModelRoleConfig(BaseModel):
+    """OpenAI-compatible model configuration for a specific runtime role."""
+
     openai_config: OpenAIConfig = Field(..., description="OpenAI API configuration")
+
+
+class MemoryAgentModelConfig(BaseModel):
+    """Memory-agent configuration for both KV and text modes."""
+
+    model_id: Optional[str] = Field(
+        default=None,
+        description="HuggingFace model ID or local path. Required for KV mode and "
+        "optional for text mode when tokenizer.model_id is configured.",
+    )
+    openai_config: Optional[OpenAIConfig] = Field(
+        default=None,
+        description="OpenAI API configuration. Required for text-mode memory agents.",
+    )
     model_context_window: int = Field(
         default=32768, ge=1024, le=131072, description="Model context window size"
     )
@@ -32,10 +51,68 @@ class ModelConfig(BaseModel):
     )
 
 
+class ModelConfig(BaseModel):
+    """Model configuration with a required memory model and general LLM defaults."""
+
+    memory_agent_model: MemoryAgentModelConfig = Field(
+        ..., description="Model configuration for memory agents"
+    )
+    general_model: APIModelRoleConfig = Field(
+        ..., description="Default OpenAI-compatible model configuration for non-memory roles"
+    )
+    manager_model: Optional[APIModelRoleConfig] = Field(
+        default=None,
+        description="Optional override for the top-level manager/tool-calling model",
+    )
+    aggregator_model: Optional[APIModelRoleConfig] = Field(
+        default=None,
+        description="Optional override for the aggregation/summarization model",
+    )
+    question_answer_model: Optional[APIModelRoleConfig] = Field(
+        default=None,
+        description="Optional override for final question-answer generation",
+    )
+    router_fallback_model: Optional[APIModelRoleConfig] = Field(
+        default=None,
+        description="Optional override for the router or router-fallback model",
+    )
+
+    def get_general_openai_config(self) -> OpenAIConfig:
+        """Return the default non-memory OpenAI configuration."""
+        return self.general_model.openai_config
+
+    def _get_role_override_or_general(
+        self, role_config: Optional[APIModelRoleConfig]
+    ) -> OpenAIConfig:
+        """Return a role override when present, otherwise the general config."""
+        if role_config is not None:
+            return role_config.openai_config
+        return self.get_general_openai_config()
+
+    def get_memory_agent_config(self) -> MemoryAgentModelConfig:
+        """Return the effective memory-agent configuration."""
+        return self.memory_agent_model
+
+    def get_manager_openai_config(self) -> OpenAIConfig:
+        """Return the effective manager/chat model configuration."""
+        return self._get_role_override_or_general(self.manager_model)
+
+    def get_aggregator_openai_config(self) -> OpenAIConfig:
+        """Return the effective aggregation model configuration."""
+        return self._get_role_override_or_general(self.aggregator_model)
+
+    def get_router_openai_config(self) -> OpenAIConfig:
+        """Return the effective router model configuration."""
+        return self._get_role_override_or_general(self.router_fallback_model)
+
+    def get_question_answer_openai_config(self) -> OpenAIConfig:
+        """Return the effective evaluation question-answer model configuration."""
+        return self._get_role_override_or_general(self.question_answer_model)
+
+
 class HybridRouterConfig(BaseModel):
     """Hybrid router configuration."""
 
-    # Embedding settings
     embedding_provider: Literal["huggingface", "openai"] = Field(
         default="huggingface",
         description="Embedding model provider. 'huggingface' uses sentence-transformers, "
@@ -50,8 +127,6 @@ class HybridRouterConfig(BaseModel):
         default=None,
         description="Additional embedding configuration (e.g., api_key, base_url for OpenAI).",
     )
-
-    # Scoring weights (should sum to 1.0, will be normalized)
     summary_weight: float = Field(
         default=0.3,
         ge=0.0,
@@ -70,8 +145,6 @@ class HybridRouterConfig(BaseModel):
         le=1.0,
         description="Weight for BM25 keyword matching score.",
     )
-
-    # Top-k settings for each scoring component
     summary_top_k: int = Field(
         default=10, ge=1, description="Top-k summaries to consider for scoring."
     )
@@ -81,29 +154,23 @@ class HybridRouterConfig(BaseModel):
     bm25_top_k: int = Field(
         default=10, ge=1, description="Top-k BM25 results to consider."
     )
-
-    # Text chunking settings
     text_chunk_size: int = Field(
-        default=512, ge=100, description="Maximum chunk size for text embedding (characters)."
+        default=512,
+        ge=100,
+        description="Maximum chunk size for text embedding (characters).",
     )
     text_chunk_overlap: int = Field(
         default=50, ge=0, description="Overlap between text chunks (characters)."
     )
-
-    # Fallback setting
     use_llm_fallback: bool = Field(
         default=False,
         description="Use LLM-based routing as fallback when embedding fails.",
     )
-
-    # BM25 tokenizer settings
     bm25_use_jieba: bool = Field(
         default=True,
         description="Use jieba tokenizer for Chinese text support in BM25. "
         "Set to False if your corpus is English-only for slightly better performance.",
     )
-
-    # BM25 boost threshold for auto-selection
     bm25_boost_threshold: Optional[float] = Field(
         default=None,
         ge=0.0,
@@ -151,7 +218,6 @@ class MemoryConfig(BaseModel):
     max_blocks: int = Field(
         default=5, ge=1, description="Maximum number of memory blocks for router"
     )
-    # Resource control parameters for different hardware configurations
     query_batch_size: int = Field(
         default=4,
         ge=1,
@@ -177,15 +243,11 @@ class MemoryConfig(BaseModel):
         description="Enable router for selecting relevant blocks. "
         "Set to False to query ALL blocks directly (useful for evaluation/debugging).",
     )
-
-    # Router type selection
     router_type: Literal["llm", "hybrid"] = Field(
         default="hybrid",
         description="Router type: 'llm' for LLM-based routing (legacy), "
         "'hybrid' for embedding + BM25 hybrid routing (recommended).",
     )
-
-    # Hybrid router configuration
     hybrid_router: HybridRouterConfig = Field(
         default_factory=HybridRouterConfig,
         description="Configuration for hybrid router (only used when router_type='hybrid').",
@@ -262,12 +324,15 @@ class LoggingConfig(BaseModel):
 class MaxMemoryConfig(BaseModel):
     """GPU memory configuration per device."""
 
-    model_config = {"extra": "allow"}  # Allow dynamic GPU device keys
+    model_config = {"extra": "allow"}
 
 
 class AppConfig(BaseModel):
     """Main application configuration."""
 
+    tokenizer: Optional[TokenizerConfig] = Field(
+        default=None, description="Tokenizer configuration"
+    )
     model: ModelConfig
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     max_memory: Optional[Dict[str, str]] = Field(
@@ -281,10 +346,103 @@ class AppConfig(BaseModel):
     )
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
+    def get_tokenizer_model_id(self) -> Optional[str]:
+        """Return the effective tokenizer model ID."""
+        if self.tokenizer is not None:
+            return self.tokenizer.model_id
+        return self.model.get_memory_agent_config().model_id
+
+    def get_model_label(self) -> str:
+        """Return a human-readable model label for logging/results."""
+        model_id = self.get_tokenizer_model_id()
+        if model_id:
+            return model_id
+        qa_config = self.model.get_question_answer_openai_config()
+        if qa_config is not None:
+            return qa_config.model
+        raise ValueError("No effective model label could be resolved from the config.")
+
+    def get_runtime_model_summary(self) -> Dict[str, Optional[str]]:
+        """Return a structured summary of all effective model roles."""
+        memory_agent = self.model.get_memory_agent_config()
+        manager_config = self.model.get_manager_openai_config()
+        aggregator_config = self.model.get_aggregator_openai_config()
+        router_config = self.model.get_router_openai_config()
+        question_answer_config = self.model.get_question_answer_openai_config()
+
+        return {
+            "storage_mode": self.memory.storage_mode,
+            "tokenizer_model": self.get_tokenizer_model_id(),
+            "memory_agent_model": (
+                memory_agent.model_id
+                or (
+                    memory_agent.openai_config.model
+                    if memory_agent.openai_config is not None
+                    else None
+                )
+            ),
+            "general_model": self.model.get_general_openai_config().model,
+            "manager_model": (
+                manager_config.model if manager_config is not None else None
+            ),
+            "aggregator_model": (
+                aggregator_config.model if aggregator_config is not None else None
+            ),
+            "router_fallback_model": (
+                router_config.model if router_config is not None else None
+            ),
+            "question_answer_model": (
+                question_answer_config.model
+                if question_answer_config is not None
+                else None
+            ),
+        }
+
+    def to_chat_manager_kwargs(self) -> Dict[str, Any]:
+        """Build runtime kwargs for create_chat_manager()."""
+        memory_agent = self.model.get_memory_agent_config()
+        manager_config = self.model.get_manager_openai_config()
+        aggregator_config = self.model.get_aggregator_openai_config()
+        router_config = self.model.get_router_openai_config()
+
+        kwargs: Dict[str, Any] = {
+            "storage_mode": self.memory.storage_mode,
+            "model_id": self.get_tokenizer_model_id(),
+            "chat_openai_config": manager_config.model_dump(),
+            "aggregator_openai_config": aggregator_config.model_dump(),
+            "router_openai_config": router_config.model_dump(),
+            "clean_cache_first": self.memory.clean_cache_first,
+            "model_context_window": memory_agent.model_context_window,
+            "router_system_prompt": self.memory.router_system_prompt,
+            "overlap_mode": self.memory.overlap_mode,
+            "overlap_ratio": self.memory.overlap_ratio,
+            "block_size_ratio": self.memory.block_size_ratio,
+            "max_memory": self.max_memory,
+            "max_memory_segments": self.memory.max_memory_segments,
+            "max_blocks": self.memory.max_blocks,
+            "query_batch_size": self.memory.query_batch_size,
+            "max_parallel_cache_loads": self.memory.max_parallel_cache_loads,
+            "enable_router": self.memory.enable_router,
+            "router_type": self.memory.router_type,
+            "hybrid_router_config": self.memory.hybrid_router.model_dump(),
+        }
+
+        if self.memory.storage_mode == "text":
+            kwargs["memory_agent_openai_config"] = (
+                memory_agent.openai_config.model_dump()
+                if memory_agent.openai_config is not None
+                else None
+            )
+        else:
+            kwargs["attn_implementation"] = memory_agent.attn_implementation
+            kwargs["device_map"] = memory_agent.device_map
+            kwargs["quantization_config"] = memory_agent.quantization_config
+
+        return kwargs
+
     @model_validator(mode="after")
     def validate_config_consistency(self) -> "AppConfig":
         """Validate configuration consistency across sections."""
-        # Ensure block_size_ratio + overlap_ratio doesn't exceed reasonable limits
         total_ratio = self.memory.block_size_ratio + self.memory.overlap_ratio
         if total_ratio > 0.9:
             raise ValueError(
@@ -292,6 +450,25 @@ class AppConfig(BaseModel):
                 f"overlap_ratio ({self.memory.overlap_ratio}) = {total_ratio} "
                 "exceeds 0.9, which may cause memory issues"
             )
+
+        tokenizer_model_id = self.get_tokenizer_model_id()
+        memory_agent = self.model.get_memory_agent_config()
+
+        if self.memory.storage_mode == "kv_cache":
+            if memory_agent.model_id is None:
+                raise ValueError(
+                    "KV cache mode requires model.memory_agent_model.model_id."
+                )
+        else:
+            if tokenizer_model_id is None:
+                raise ValueError(
+                    "Text mode requires tokenizer.model_id."
+                )
+            if memory_agent.openai_config is None:
+                raise ValueError(
+                    "Text mode requires model.memory_agent_model.openai_config."
+                )
+
         return self
 
 
@@ -319,4 +496,3 @@ def validate_openai_config(config_dict: Dict[str, Any]) -> OpenAIConfig:
 def validate_memory_config(config_dict: Dict[str, Any]) -> MemoryConfig:
     """Validate memory configuration standalone."""
     return MemoryConfig.model_validate(config_dict)
-

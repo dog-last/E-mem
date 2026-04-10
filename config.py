@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 import yaml
 
@@ -95,6 +95,23 @@ def load_validated_config(config_path: Optional[str] = None) -> "AppConfig":
         ) from e
 
 
+def ensure_app_config(config: Union["AppConfig", Dict[str, Any]]) -> "AppConfig":
+    """Return a validated AppConfig instance from a dict or AppConfig."""
+    from src.config import AppConfig, load_and_validate_config
+
+    if isinstance(config, AppConfig):
+        return config
+    return load_and_validate_config(config)
+
+
+def build_chat_manager_kwargs(
+    config: Union["AppConfig", Dict[str, Any]]
+) -> Dict[str, Any]:
+    """Build normalized create_chat_manager kwargs from a config object."""
+    app_config = ensure_app_config(config)
+    return app_config.to_chat_manager_kwargs()
+
+
 def get_config(reload: bool = False) -> Dict[str, Any]:
     """
     Get configuration with caching.
@@ -118,13 +135,18 @@ def _update_globals_from_config() -> None:
     global MAX_CONCURRENT_GPU_OPERATIONS, DEFAULT_OVERLAP_RATIO, DEFAULT_BLOCK_SIZE_RATIO
 
     config_data = get_config()
-    if config_data and "memory" in config_data:
-        memory_config = config_data["memory"]
-        MAX_CONCURRENT_GPU_OPERATIONS = memory_config.get(
-            "max_concurrent_gpu_operations", 2
-        )
-        DEFAULT_OVERLAP_RATIO = memory_config.get("overlap_ratio", 0.1)
-        DEFAULT_BLOCK_SIZE_RATIO = memory_config.get("block_size_ratio", 0.125)
+    if not config_data:
+        return
+
+    try:
+        app_config = ensure_app_config(config_data)
+    except Exception as exc:  # pragma: no cover - defensive fallback on import
+        logger.warning("Failed to validate config during global initialization: %s", exc)
+        return
+
+    MAX_CONCURRENT_GPU_OPERATIONS = app_config.memory.max_concurrent_gpu_operations
+    DEFAULT_OVERLAP_RATIO = app_config.memory.overlap_ratio
+    DEFAULT_BLOCK_SIZE_RATIO = app_config.memory.block_size_ratio
 
 
 # Initialize on module load

@@ -46,7 +46,13 @@ def test_text_block(temp_text_dir):
 def test_factory_function():
     """Test factory function validation."""
     with pytest.raises(ValueError, match="Invalid storage_mode"):
-        create_chat_manager(storage_mode="invalid")
+        create_chat_manager(
+            storage_mode="invalid",
+            chat_openai_config={"api_key": "test"},
+            aggregator_openai_config={"api_key": "test"},
+            memory_agent_openai_config={"api_key": "test"},
+            router_openai_config={"api_key": "test"},
+        )
 
 
 def test_cleanup(temp_text_dir):

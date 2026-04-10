@@ -11,7 +11,10 @@ logger = logging.getLogger(__name__)
 def create_chat_manager(
     storage_mode: Literal["kv_cache", "text"] = "kv_cache",
     model_id: str = "Qwen/Qwen3-4B",
-    openai_config: Optional[Dict[str, Any]] = None,
+    chat_openai_config: Dict[str, Any] | None = None,
+    aggregator_openai_config: Dict[str, Any] | None = None,
+    memory_agent_openai_config: Dict[str, Any] | None = None,
+    router_openai_config: Optional[Dict[str, Any]] = None,
     clean_cache_first: bool = True,
     model_context_window: int = 32768,
     router_system_prompt: Optional[str] = None,
@@ -37,7 +40,10 @@ def create_chat_manager(
     Args:
         storage_mode: "kv_cache" for KV cache storage, "text" for text-based storage
         model_id: Model identifier for HuggingFace
-        openai_config: OpenAI API configuration dict
+        chat_openai_config: Optional manager/tool-calling model config
+        aggregator_openai_config: Optional aggregation model config
+        memory_agent_openai_config: Optional text-mode memory-agent model config
+        router_openai_config: Optional router or router-fallback model config
         clean_cache_first: Whether to clear existing cache on initialization
         model_context_window: Context window size for the model
         router_system_prompt: Custom system prompt for router
@@ -62,7 +68,9 @@ def create_chat_manager(
         chat_manager = create_chat_manager(
             storage_mode="kv_cache",
             model_id="Qwen/Qwen3-4B",
-            openai_config={"api_key": "your-key"},
+            chat_openai_config={"api_key": "your-key"},
+            aggregator_openai_config={"api_key": "your-key"},
+            router_openai_config={"api_key": "your-key"},
             max_memory_segments=5,
             max_blocks=5,
             max_parallel_cache_loads=8,  # For multi-GPU with lots of memory
@@ -72,7 +80,8 @@ def create_chat_manager(
         chat_manager = create_chat_manager(
             storage_mode="kv_cache",
             model_id="Qwen/Qwen3-4B",
-            openai_config={"api_key": "your-key"},
+            chat_openai_config={"api_key": "your-key"},
+            aggregator_openai_config={"api_key": "your-key"},
             max_parallel_cache_loads=2,  # Conservative for limited memory
         )
 
@@ -80,15 +89,35 @@ def create_chat_manager(
         chat_manager = create_chat_manager(
             storage_mode="text",
             model_id="Qwen/Qwen3-4B",
-            openai_config={"api_key": "your-key"}
+            chat_openai_config={"api_key": "your-key"},
+            aggregator_openai_config={"api_key": "your-key"},
+            memory_agent_openai_config={"api_key": "your-key"},
         )
     """
     logger.info(f"Creating ChatManager with storage_mode={storage_mode}")
 
+    if chat_openai_config is None:
+        raise ValueError("chat_openai_config is required.")
+    if aggregator_openai_config is None:
+        raise ValueError("aggregator_openai_config is required.")
+
+    router_needs_llm = enable_router and (
+        router_type == "llm"
+        or (
+            router_type == "hybrid"
+            and bool(hybrid_router_config)
+            and hybrid_router_config.get("use_llm_fallback", False)
+        )
+    )
+    if router_needs_llm and router_openai_config is None:
+        raise ValueError("router_openai_config is required for the configured router.")
+
     if storage_mode == "kv_cache":
         return ChatManager(
             model_id=model_id,
-            openai_config=openai_config,
+            chat_openai_config=chat_openai_config,
+            aggregator_openai_config=aggregator_openai_config,
+            router_openai_config=router_openai_config,
             clean_cache_first=clean_cache_first,
             model_context_window=model_context_window,
             router_system_prompt=router_system_prompt,
@@ -105,6 +134,8 @@ def create_chat_manager(
             **kwargs,
         )
     elif storage_mode == "text":
+        if memory_agent_openai_config is None:
+            raise ValueError("memory_agent_openai_config is required for text mode.")
         # Text storage doesn't need GPU-related parameters
         gpu_params = [
             "attn_implementation",
@@ -123,7 +154,10 @@ def create_chat_manager(
 
         return TextStorageChatManager(
             model_id=model_id,
-            openai_config=openai_config,
+            chat_openai_config=chat_openai_config,
+            aggregator_openai_config=aggregator_openai_config,
+            memory_agent_openai_config=memory_agent_openai_config,
+            router_openai_config=router_openai_config,
             clean_cache_first=clean_cache_first,
             model_context_window=model_context_window,
             router_system_prompt=router_system_prompt,

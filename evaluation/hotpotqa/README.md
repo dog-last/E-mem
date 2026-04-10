@@ -10,24 +10,28 @@ Evaluation script for HotpotQA dataset using E-mem.
     - `eval_1600.json`
 2. Copy the example config:
 ```bash
-cd evaluation/hotpotqa
-cp config.example.yaml config.yaml
+cp evaluation/hotpotqa/config.kv.yaml evaluation/hotpotqa/config.yaml
+# Or use text mode:
+# cp evaluation/hotpotqa/config.text.yaml evaluation/hotpotqa/config.yaml
 ```
 
-3. Edit `config.yaml` with your settings:
+3. Edit `evaluation/hotpotqa/config.yaml` with your settings:
    - Set your OpenAI API key and base URL
    - Configure model settings
    - Set dataset path
    - Other configurations
 
+If you are not sure what each `model.*` field means, read [Config Model Roles](../../docs/CONFIG_MODELS.md) first.
+If you want the meaning of the memory, router, evaluation, or logging fields, read [Config Reference](../../docs/CONFIG_REFERENCE.md).
+
 ## Usage
 
 ### Using Shell Script
 ```bash
-bash scripts/run_hotpotqa_eval.sh
+bash scripts/eval_hotpotqa.sh
 
 # Override specific settings
-bash scripts/run_hotpotqa_eval.sh --ratio 0.1
+bash scripts/eval_hotpotqa.sh --ratio 0.1
 ```
 
 ## How It Works

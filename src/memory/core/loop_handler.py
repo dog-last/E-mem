@@ -380,6 +380,7 @@ class MemoryHandler:
                 "text_chunk_overlap": hybrid_config.get("text_chunk_overlap", 50),
                 "use_llm_fallback": hybrid_config.get("use_llm_fallback", False),
                 "bm25_use_jieba": hybrid_config.get("bm25_use_jieba", True),
+                "bm25_boost_threshold": hybrid_config.get("bm25_boost_threshold"),
             }
             if router_system_prompt is not None:
                 router_kwargs["system_prompt"] = router_system_prompt

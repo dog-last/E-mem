@@ -12,15 +12,35 @@ os.environ.setdefault('HF_ENDPOINT', 'https://hf-mirror.com')
 @pytest.fixture
 def mock_config():
     return {
-        'model': {
+        'tokenizer': {
             'model_id': 'test-model',
-            'openai_config': None,
-            'model_context_window': 4096,
-            'attn_implementation': 'sdpa',
-            'device_map': 'auto',
-            'quantization_config': None
+        },
+        'model': {
+            'memory_agent_model': {
+                'model_id': 'test-model',
+                'model_context_window': 4096,
+                'attn_implementation': 'sdpa',
+                'device_map': 'auto',
+                'quantization_config': None
+            },
+            'general_model': {
+                'openai_config': {
+                    'api_key': 'test',
+                    'base_url': 'test',
+                    'model': 'test'
+                }
+            },
+            'question_answer_model': {
+                'openai_config': {
+                    'api_key': 'test',
+                    'base_url': 'test',
+                    'model': 'test'
+                }
+            },
+            'router_fallback_model': None
         },
         'memory': {
+            'storage_mode': 'kv_cache',
             'clean_cache_first': True,
             'router_system_prompt': None
         },
@@ -110,12 +130,6 @@ class TestEvaluateDataset:
         # Update config paths
         mock_config['locomo_eval']['output_dir'] = str(tmp_path / 'results')
         mock_config['logging']['log_dir'] = str(tmp_path / 'logs')
-        mock_config['model']['openai_config'] = {
-            'api_key': 'test',
-            'base_url': 'test',
-            'model': 'test'
-        }
-        
         # Run evaluation
         results = evaluate_dataset(mock_config, mock_logger)
         
@@ -144,7 +158,6 @@ class TestEvaluateDataset:
         # Create multiple samples
         mock_load_dataset.return_value = mock_samples * 10
         mock_config['locomo_eval']['ratio'] = 0.1
-        mock_config['model']['openai_config'] = {'api_key': 't', 'base_url': 't', 'model': 't'}
         
         mock_agent = Mock()
         mock_agent.search_memory.return_value = "Test memory"
@@ -174,7 +187,6 @@ class TestEvaluateDataset:
         from evaluation.locomo.eval_locomo import evaluate_dataset
         
         mock_load_dataset.return_value = mock_samples
-        mock_config['model']['openai_config'] = {'api_key': 't', 'base_url': 't', 'model': 't'}
         
         mock_agent = Mock()
         mock_agent.search_memory.return_value = "Test memory"
@@ -204,7 +216,6 @@ class TestEvaluateDataset:
         from evaluation.locomo.eval_locomo import evaluate_dataset
         
         mock_load_dataset.return_value = mock_samples
-        mock_config['model']['openai_config'] = {'api_key': 't', 'base_url': 't', 'model': 't'}
         
         mock_agent = Mock()
         mock_agent.search_memory.return_value = "Test memory"
@@ -231,15 +242,14 @@ class TestEvaluateDataset:
 class TestMain:
     @patch('evaluation.locomo.eval_locomo.evaluate_dataset')
     @patch('evaluation.locomo.eval_locomo.setup_logger')
-    @patch('builtins.open')
-    @patch('evaluation.locomo.eval_locomo.yaml.safe_load')
-    def test_main_basic(self, mock_yaml_load, mock_open, mock_setup_logger,
+    @patch('evaluation.locomo.eval_locomo.load_raw_config')
+    def test_main_basic(self, mock_load_raw_config, mock_setup_logger,
                        mock_evaluate, mock_config):
         import sys
 
         from evaluation.locomo.eval_locomo import main
         
-        mock_yaml_load.return_value = mock_config
+        mock_load_raw_config.return_value = mock_config
         mock_logger = Mock()
         mock_setup_logger.return_value = mock_logger
         mock_evaluate.return_value = {'total_questions': 10}

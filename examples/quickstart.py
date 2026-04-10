@@ -5,11 +5,10 @@ This demonstrates a simple conversation loop with memory storage and retrieval.
 import sys
 from pathlib import Path
 
-import yaml
-
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from config import load_validated_config
 from src.conversation_manager.factory import create_chat_manager
 
 # Try to load from config.yaml
@@ -17,33 +16,31 @@ try:
     # Ensure we're reading from project root
     project_root = Path(__file__).parent.parent
     config_path = project_root / 'config.yaml'
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    
-    # Extract all config values like eval_locomo.py does
-    MODEL_ID = config['model']['model_id']
-    OPENAI_CONFIG = config['model']['openai_config']
-    MODEL_CONTEXT_WINDOW = config['model']['model_context_window']
-    ATTN_IMPLEMENTATION = config['model']['attn_implementation']
-    DEVICE_MAP = config['model']['device_map']
-    QUANTIZATION_CONFIG = config['model'].get('quantization_config')
-    MAX_MEMORY = config.get('max_memory')
-    
-    STORAGE_MODE = config['memory'].get('storage_mode', 'kv_cache')
-    CLEAN_CACHE_ON_START = config['memory']['clean_cache_first']
-    ROUTER_SYSTEM_PROMPT = config['memory'].get('router_system_prompt')
-    
+    APP_CONFIG = load_validated_config(str(config_path))
+    MODEL_ID = APP_CONFIG.get_model_label()
+    CHAT_MANAGER_KWARGS = APP_CONFIG.to_chat_manager_kwargs()
+    STORAGE_MODE = APP_CONFIG.memory.storage_mode
+    CLEAN_CACHE_ON_START = APP_CONFIG.memory.clean_cache_first
+    ROUTER_SYSTEM_PROMPT = APP_CONFIG.memory.router_system_prompt
     MAX_NEW_TOKENS = 1024
 except Exception as e:
     print(f"Warning: Could not load config.yaml: {e}")
     print("Using default configuration.\n")
     MODEL_ID = "Qwen/Qwen3-4B"
-    OPENAI_CONFIG = {"api_key": "your-api-key-here"}
-    MODEL_CONTEXT_WINDOW = 32768
-    ATTN_IMPLEMENTATION = "sdpa"
-    DEVICE_MAP = "auto"
-    QUANTIZATION_CONFIG = None
-    MAX_MEMORY = None
+    CHAT_MANAGER_KWARGS = {
+        "storage_mode": "kv_cache",
+        "model_id": MODEL_ID,
+        "chat_openai_config": {"api_key": "your-api-key-here"},
+        "aggregator_openai_config": {"api_key": "your-api-key-here"},
+        "router_openai_config": {"api_key": "your-api-key-here"},
+        "model_context_window": 32768,
+        "attn_implementation": "sdpa",
+        "device_map": "auto",
+        "quantization_config": None,
+        "max_memory": None,
+        "clean_cache_first": True,
+        "router_system_prompt": None,
+    }
     STORAGE_MODE = "kv_cache"
     CLEAN_CACHE_ON_START = True
     ROUTER_SYSTEM_PROMPT = None
@@ -61,18 +58,7 @@ def main():
     
     # Initialize chat manager using factory
     try:
-        chat_manager = create_chat_manager(
-            storage_mode=STORAGE_MODE,
-            model_id=MODEL_ID,
-            openai_config=OPENAI_CONFIG,
-            clean_cache_first=CLEAN_CACHE_ON_START,
-            model_context_window=MODEL_CONTEXT_WINDOW,
-            attn_implementation=ATTN_IMPLEMENTATION,
-            device_map=DEVICE_MAP,
-            router_system_prompt=ROUTER_SYSTEM_PROMPT,
-            quantization_config=QUANTIZATION_CONFIG,
-            max_memory=MAX_MEMORY
-        )
+        chat_manager = create_chat_manager(**CHAT_MANAGER_KWARGS)
     except Exception as e:
         print(f"\nError initializing chat manager: {e}")
         print("\nPlease check your config.yaml")

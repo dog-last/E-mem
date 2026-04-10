@@ -42,14 +42,16 @@ We recommend using `uv` for dependency management.
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/mem-with-kv-cache.git
-cd mem-with-kv-cache
+git clone https://github.com/dog-last/E-mem.git
+cd E-mem
 
 # Install with uv (Recommended)
 uv sync
 
 # Setup configuration
-cp config.example.yaml config.yaml
+cp config.kv.yaml config.yaml
+# Or start from text mode:
+# cp config.text.yaml config.yaml
 # Edit config.yaml with your settings
 ```
 
@@ -65,10 +67,20 @@ from src.conversation_manager import create_chat_manager
 manager = create_chat_manager(
     storage_mode="kv_cache",           # Enable Latent State Optimization (or use "text" for pure API)
     model_id="Qwen/Qwen3-4B",          # Assistant Agent Model (SLM)
-    openai_config={                    # Master Agent Configuration
+    chat_openai_config={               # Top-level manager/tool-calling model
         "api_key": "your-key",
         "base_url": "https://api.openai.com/v1",
         "model": "gpt-4o-mini"         # Master Agent (Global Planner)
+    },
+    aggregator_openai_config={         # Aggregation model
+        "api_key": "your-key",
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4o-mini"
+    },
+    router_openai_config={             # Router / fallback router model
+        "api_key": "your-key",
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4o-mini"
     }
 )
 
@@ -83,6 +95,8 @@ print(response)
 # Output: "You are a software engineer."
 ```
 
+In YAML config files, most users only need to set `model.memory_agent_model` and `model.general_model`. The role-specific fields `manager_model`, `aggregator_model`, `router_fallback_model`, and `question_answer_model` are optional overrides that default to `general_model`. See [Config Model Roles](docs/CONFIG_MODELS.md) for model-role semantics and [Config Reference](docs/CONFIG_REFERENCE.md) for the rest of the config fields.
+
 ## 📚 Documentation
 
 Detailed documentation for researchers and engineers.
@@ -91,12 +105,14 @@ Detailed documentation for researchers and engineers.
 |:---|:---|
 | **[Architecture](docs/ARCHITECTURE.md)** | Deep dive into the Master-Assistant design and Routing mechanisms. |
 | **[Operational Guides](docs/GUIDES.md)** | Guides on Persistence, Latent State Caching, and Model Compatibility. |
+| **[Config Model Roles](docs/CONFIG_MODELS.md)** | Explains `memory_agent_model`, `general_model`, and the optional role overrides for manager / aggregator / router / QA. |
+| **[Config Reference](docs/CONFIG_REFERENCE.md)** | Explains the non-model config fields such as memory chunking, router tuning, evaluation settings, and logging. |
 | **[API Reference](docs/API_REFERENCE.md)** | Complete API specification for Managers, Handlers, and Config. |
 
 ## 📁 Project Structure
 
 ```
-mem-with-kv-cache/
+E-mem/
 ├── src/
 │   ├── agent/                    # Base agent with tool calling
 │   ├── config/                   # Pydantic configuration schemas
@@ -115,7 +131,8 @@ mem-with-kv-cache/
 │   └── hotpotqa/                 # HotpotQA benchmark scripts
 ├── tests/                        # 145 unit tests
 ├── docs/                         # Documentation
-├── config.example.yaml           # Configuration template
+├── config.kv.yaml                # KV cache configuration template
+├── config.text.yaml              # Text mode configuration template
 └── config.py                     # Configuration loader
 ```
 

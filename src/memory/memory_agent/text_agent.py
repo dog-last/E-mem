@@ -1,4 +1,5 @@
 import logging
+import re
 import uuid
 from datetime import datetime
 from typing import List
@@ -66,8 +67,27 @@ class TextMemoryAgent:
         logger.info("Creating summary for text block")
         all_text = self.current_block.get_all_text()
         prompt = f"{all_text}\n\n{SUMMARY_INSTRUCTION}"
-        self.summary = self.llm.generate_response(prompt, max_tokens=8192)
+        raw_summary = self.llm.generate_response(prompt, max_tokens=8192)
+        self.summary = self._remove_thinking_content(raw_summary)
         logger.info(f"Summary created (length: {len(self.summary)} chars)")
+
+    def _remove_thinking_content(self, response: str) -> str:
+        """Remove reasoning traces from model output for parity with KV mode."""
+        cleaned_response = response
+        cleaned_response = re.sub(
+            r"<thinking>.*?</thinking>",
+            "",
+            cleaned_response,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        cleaned_response = re.sub(
+            r"<think>.*?</think>",
+            "",
+            cleaned_response,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        cleaned_response = re.sub(r"\n\s*\n", "\n\n", cleaned_response)
+        return cleaned_response.strip()
 
     def preload_cache(self):
         """No-op for text storage mode (no cache to preload)."""

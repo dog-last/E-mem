@@ -13,7 +13,8 @@ class TestChatManager:
         """Test ChatManager initialization."""
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config
         )
         
         assert chat.name == "chat_manager"
@@ -36,7 +37,8 @@ class TestChatManager:
         
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config
         )
         
         response = chat.chat("Hello")
@@ -54,7 +56,8 @@ class TestChatManager:
         
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config
         )
         chat.handle_user_input = "Test input"
         
@@ -73,7 +76,8 @@ class TestChatManager:
         
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config
         )
         
         result = chat.add_memory("Test memory")
@@ -94,7 +98,8 @@ class TestChatManager:
         
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config
         )
         
         result = chat.search_memory("Test query")
@@ -112,7 +117,8 @@ class TestChatManager:
         
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config
         )
         
         result = chat.search_memory("Test query")
@@ -126,7 +132,8 @@ class TestChatManager:
         """Test executing add_memory tool."""
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config
         )
         chat.handle_user_input = "Test input"
         
@@ -142,7 +149,8 @@ class TestChatManager:
         """Test executing query_memory tool."""
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config
         )
         
         with patch.object(chat, "search_memory", return_value="Found") as mock_search:
@@ -157,7 +165,8 @@ class TestChatManager:
         """Test executing unknown tool."""
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config
         )
         
         result = chat.execute_tool("unknown_tool", {})
@@ -171,7 +180,8 @@ class TestChatManager:
         """Test adding empty memory."""
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config
         )
         chat.handle_user_input = ""
         
@@ -186,7 +196,8 @@ class TestChatManager:
         """Test searching with empty query."""
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config
         )
         
         result = chat.search_memory("")
@@ -204,7 +215,8 @@ class TestChatManager:
         
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config
         )
         chat.handle_user_input = "Original input"
         chat.save_original_input = True
@@ -228,7 +240,8 @@ class TestChatManager:
         
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config
         )
         
         outer_tool = {"type": "function", "function": {"name": "custom_tool"}}
@@ -251,7 +264,8 @@ class TestChatManager:
         
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config
         )
         
         response = chat.chat("Save this information", auto_save=True)
@@ -278,7 +292,8 @@ class TestChatManager:
         
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config
         )
         
         response = chat.chat(
@@ -308,7 +323,8 @@ class TestChatManager:
         
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config
         )
         
         response = chat.chat("Save this", auto_save=True)
@@ -335,7 +351,8 @@ class TestChatManager:
 
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config
         )
 
         response = chat.chat("Hello", auto_save=False)
@@ -352,7 +369,8 @@ class TestChatManager:
         """Test ChatManager initialization with max_memory_segments and max_blocks."""
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config,
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config,
             max_memory_segments=10,
             max_blocks=3,
         )
@@ -372,14 +390,16 @@ class TestChatManager:
         with pytest.raises(ValueError, match="block_size_ratio"):
             ChatManager(
                 model_id="test-model",
-                openai_config=mock_openai_config,
+                chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config,
                 block_size_ratio=0,  # Invalid: must be > 0
             )
 
         with pytest.raises(ValueError, match="block_size_ratio"):
             ChatManager(
                 model_id="test-model",
-                openai_config=mock_openai_config,
+                chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config,
                 block_size_ratio=1.5,  # Invalid: must be <= 1
             )
 
@@ -391,7 +411,8 @@ class TestChatManager:
         """Test ChatManager with all optional parameters."""
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config,
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config,
             clean_cache_first=False,
             model_context_window=16384,
             attn_implementation="flash_attention_2",
@@ -436,7 +457,8 @@ class TestChatManager:
         
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config,
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config,
             router_type="hybrid",
             hybrid_router_config=hybrid_config,
         )
@@ -454,7 +476,8 @@ class TestChatManager:
         """Test ChatManager with llm router type."""
         chat = ChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config,
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config,
             router_type="llm",
         )
 
@@ -475,7 +498,9 @@ class TestTextStorageChatManager:
 
         chat = TextStorageChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config,
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config,
+            memory_agent_openai_config=mock_openai_config,
         )
 
         assert chat.name == "text_chat_manager"
@@ -491,7 +516,9 @@ class TestTextStorageChatManager:
 
         chat = TextStorageChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config,
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config,
+            memory_agent_openai_config=mock_openai_config,
             max_memory_segments=5,
             max_blocks=8,
         )
@@ -514,7 +541,9 @@ class TestTextStorageChatManager:
         with pytest.raises(ValueError, match="block_size_ratio"):
             TextStorageChatManager(
                 model_id="test-model",
-                openai_config=mock_openai_config,
+                chat_openai_config=mock_openai_config,
+                aggregator_openai_config=mock_openai_config,
+                memory_agent_openai_config=mock_openai_config,
                 block_size_ratio=0,
             )
 
@@ -535,7 +564,9 @@ class TestTextStorageChatManager:
 
         chat = TextStorageChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config,
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config,
+            memory_agent_openai_config=mock_openai_config,
         )
 
         response = chat.chat("Hello")
@@ -560,7 +591,9 @@ class TestTextStorageChatManager:
         
         chat = TextStorageChatManager(
             model_id="test-model",
-            openai_config=mock_openai_config,
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config,
+            memory_agent_openai_config=mock_openai_config,
             router_type="hybrid",
             hybrid_router_config=hybrid_config,
         )
@@ -585,7 +618,9 @@ class TestCreateChatManagerFactory:
         manager = create_chat_manager(
             storage_mode="kv_cache",
             model_id="test-model",
-            openai_config=mock_openai_config,
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config,
+            router_openai_config=mock_openai_config,
         )
 
         assert manager.name == "chat_manager"
@@ -601,7 +636,10 @@ class TestCreateChatManagerFactory:
         manager = create_chat_manager(
             storage_mode="text",
             model_id="test-model",
-            openai_config=mock_openai_config,
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config,
+            memory_agent_openai_config=mock_openai_config,
+            router_openai_config=mock_openai_config,
         )
 
         assert manager.name == "text_chat_manager"
@@ -616,7 +654,10 @@ class TestCreateChatManagerFactory:
             create_chat_manager(
                 storage_mode="invalid",
                 model_id="test-model",
-                openai_config=mock_openai_config,
+                chat_openai_config=mock_openai_config,
+                aggregator_openai_config=mock_openai_config,
+                memory_agent_openai_config=mock_openai_config,
+                router_openai_config=mock_openai_config,
             )
 
     @patch("src.conversation_manager.chat_handler.TextMemoryHandler")
@@ -633,7 +674,10 @@ class TestCreateChatManagerFactory:
             manager = create_chat_manager(
                 storage_mode="text",
                 model_id="test-model",
-                openai_config=mock_openai_config,
+                chat_openai_config=mock_openai_config,
+                aggregator_openai_config=mock_openai_config,
+                memory_agent_openai_config=mock_openai_config,
+                router_openai_config=mock_openai_config,
                 attn_implementation="sdpa",  # GPU param, should be ignored
                 device_map="auto",  # GPU param, should be ignored
             )
@@ -653,7 +697,9 @@ class TestCreateChatManagerFactory:
         create_chat_manager(
             storage_mode="kv_cache",
             model_id="test-model",
-            openai_config=mock_openai_config,
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config,
+            router_openai_config=mock_openai_config,
             max_memory_segments=7,
             max_blocks=12,
         )
@@ -681,7 +727,9 @@ class TestCreateChatManagerFactory:
         create_chat_manager(
             storage_mode="kv_cache",
             model_id="test-model",
-            openai_config=mock_openai_config,
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config,
+            router_openai_config=mock_openai_config,
             router_type="hybrid",
             hybrid_router_config=hybrid_config,
         )
@@ -706,7 +754,10 @@ class TestCreateChatManagerFactory:
         create_chat_manager(
             storage_mode="text",
             model_id="test-model",
-            openai_config=mock_openai_config,
+            chat_openai_config=mock_openai_config,
+            aggregator_openai_config=mock_openai_config,
+            memory_agent_openai_config=mock_openai_config,
+            router_openai_config=mock_openai_config,
             router_type="llm",
             hybrid_router_config=hybrid_config,
         )

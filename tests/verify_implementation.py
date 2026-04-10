@@ -55,7 +55,13 @@ def test_text_block_comprehensive():
 def test_factory_validation():
     """Test factory function parameter validation."""
     with pytest.raises(ValueError, match="Invalid storage_mode"):
-        create_chat_manager(storage_mode="invalid")
+        create_chat_manager(
+            storage_mode="invalid",
+            chat_openai_config={"api_key": "test"},
+            aggregator_openai_config={"api_key": "test"},
+            memory_agent_openai_config={"api_key": "test"},
+            router_openai_config={"api_key": "test"},
+        )
 
 
 def test_file_structure():
