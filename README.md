@@ -1,5 +1,11 @@
 # E-mem
 
+[![Python 3.13+](https://img.shields.io/badge/Python-3.13+-blue.svg)](https://www.python.org/downloads/)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Code style: Ruff](https://img.shields.io/badge/Code%20style-Ruff-orange.svg)](https://docs.astral.sh/ruff/)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
+
 > **Multi-agent based Episodic Context Reconstruction for LLM Agent Memory**
 
 <p align="center">
