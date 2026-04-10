@@ -1,6 +1,6 @@
 [project]
 name = "E-mem"
-version = "0.1.0"
+version = "1.0.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -89,3 +89,9 @@ dependencies = [
 dev = [
     "pre-commit>=4.5.0",
 ]
+
+[tool.bumpversion]
+current_version = "1.0.0"
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
