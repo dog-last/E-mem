@@ -1,5 +1,5 @@
 [project]
-name = "mem-with-kv-cache"
+name = "E-mem"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
