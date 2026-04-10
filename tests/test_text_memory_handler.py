@@ -640,6 +640,43 @@ class TestTextMemoryAgentDirect:
 
     @patch("src.memory.memory_agent.text_agent.AutoTokenizer.from_pretrained")
     @patch("src.agent.base.OpenAI")
+    def test_text_memory_agent_query_removes_thinking_content(
+        self, mock_openai, mock_tokenizer_class
+    ):
+        """Test TextMemoryAgent strips thinking tags from query responses."""
+        from src.memory.memory_agent.text_agent import TextMemoryAgent
+
+        mock_tokenizer = Mock()
+        mock_tokenizer.encode.return_value = [1] * 100
+        mock_tokenizer_class.return_value = mock_tokenizer
+
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_message = Mock()
+        mock_message.content = (
+            "Query start <think>hidden reasoning</think> query end"
+        )
+        mock_message.tool_calls = None
+        mock_response.choices = [Mock(message=mock_message)]
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        agent = TextMemoryAgent(
+            model_id="test-model",
+            openai_config={"api_key": "test"},
+        )
+
+        agent.add(["Test memory content"])
+
+        result = agent.query("What is the test?")
+
+        assert "<think>" not in result
+        assert "hidden reasoning" not in result
+        assert "Query start" in result
+        assert "query end" in result
+
+    @patch("src.memory.memory_agent.text_agent.AutoTokenizer.from_pretrained")
+    @patch("src.agent.base.OpenAI")
     def test_text_memory_agent_query_empty(self, mock_openai, mock_tokenizer_class):
         """Test TextMemoryAgent query with no data."""
         from src.memory.memory_agent.text_agent import TextMemoryAgent

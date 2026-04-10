@@ -90,6 +90,9 @@ dev = [
     "pre-commit>=4.5.0",
 ]
 
+[tool.isort]
+profile = "black"
+
 [tool.bumpversion]
 current_version = "1.0.0"
 

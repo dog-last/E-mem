@@ -22,21 +22,28 @@ class BaseAgent(ABC):
         """Execute a tool call. Must be implemented by subclasses."""
         pass
 
-    def generate_response(self, question: str, max_tokens: int = 1024, tools: list = None, max_tool_rounds: int = 5) -> str:
+    def generate_response(self, question: str, max_tokens: int = 1024, tools: list = None, max_tool_rounds: int = 5,
+                          temperature: float = 0, repetition_penalty: float = None) -> str:
         if tools is None:
             tools = []
-        
+
         self.messgages.append({"role": "user", "content": question})
-        
+
+        # Build extra_body only if repetition_penalty is set
+        extra_body = {}
+        if repetition_penalty is not None:
+            extra_body["repetition_penalty"] = repetition_penalty
+
         tool_round_count = 0
-        
+
         while tool_round_count < max_tool_rounds:
             response = self.llm.chat.completions.create(
                 model=self.model,
                 messages=self.messgages,
                 tools=tools,
                 max_tokens=max_tokens,
-                temperature=0
+                temperature=temperature,
+                extra_body=extra_body if extra_body else None
             )
             
             response_message = response.choices[0].message
@@ -68,7 +75,8 @@ class BaseAgent(ABC):
             model=self.model,
             messages=self.messgages,
             max_tokens=max_tokens,
-            temperature=0
+            temperature=temperature,
+            extra_body=extra_body if extra_body else None
         )
         
         # Check if still has tool calls after max rounds

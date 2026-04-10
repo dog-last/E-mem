@@ -67,7 +67,7 @@ class TextMemoryAgent:
         logger.info("Creating summary for text block")
         all_text = self.current_block.get_all_text()
         prompt = f"{all_text}\n\n{SUMMARY_INSTRUCTION}"
-        raw_summary = self.llm.generate_response(prompt, max_tokens=8192)
+        raw_summary = self.llm.generate_response(prompt, max_tokens=8192, repetition_penalty=1.1)
         self.summary = self._remove_thinking_content(raw_summary)
         logger.info(f"Summary created (length: {len(self.summary)} chars)")
 
@@ -100,7 +100,12 @@ class TextMemoryAgent:
             return "No knowledge available."
         
         prompt = f"{all_text}\n\nBased on the context information provided above, please extract the original information that is relevant to the question (REMEMBER to give EXACT datetime along with information, and the datetime format is 'YYYY-MM-DD HH:MM:SS'):\n{question}"
-        return self.llm.generate_response(prompt, max_tokens=max_new_tokens)
+        raw_response = self.llm.generate_response(
+            prompt,
+            max_tokens=max_new_tokens,
+            repetition_penalty=1.1,
+        )
+        return self._remove_thinking_content(raw_response)
 
     def get_original_texts(self) -> List[str]:
         """

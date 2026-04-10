@@ -11,12 +11,12 @@ from datetime import datetime
 from pathlib import Path
 
 import torch
-import yaml
 from openai import OpenAI
 
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
+from config import ensure_app_config, load_raw_config
 from evaluation.locomo.load_dataset import (
     filter_dataset_by_questions,
     load_locomo_dataset,
@@ -27,7 +27,6 @@ from evaluation.locomo.utils import (
     calculate_metrics,
     extract_answer_from_xml,
 )
-from config import ensure_app_config, load_raw_config
 from src.conversation_manager.factory import create_chat_manager
 
 

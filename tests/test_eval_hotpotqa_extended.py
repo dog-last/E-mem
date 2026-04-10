@@ -5,8 +5,6 @@ import os
 import tempfile
 from unittest.mock import Mock, patch
 
-import pytest
-
 from evaluation.hotpotqa.eval_hotpotqa import (
     _calculate_f1,
     build_context_chunks_for_sample,
@@ -44,7 +42,7 @@ class TestSetupLogger:
         with tempfile.TemporaryDirectory() as tmpdir:
             log_dir = os.path.join(tmpdir, "logs", "nested")
             log_file = os.path.join(log_dir, "test.log")
-            logger = setup_logger(log_file)
+            setup_logger(log_file)
 
             assert os.path.exists(log_dir)
 
