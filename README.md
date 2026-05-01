@@ -1,25 +1,14 @@
-# E-mem
+# E-mem: Multi-Agent Based Episodic Context Reconstruction for LLM Agent Memory
 
-[![Python 3.13+](https://img.shields.io/badge/Python-3.13+-blue.svg)](https://www.python.org/downloads/)
+[![arXiv](https://img.shields.io/badge/arXiv-2601.21714-red.svg)](https://arxiv.org/pdf/2601.21714)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Code style: Ruff](https://img.shields.io/badge/Code%20style-Ruff-orange.svg)](https://docs.astral.sh/ruff/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
 
-> **Multi-agent based Episodic Context Reconstruction for LLM Agent Memory**
-
-<p align="center">
-  <a href="#-abstract">Abstract</a> •
-  <a href="#-key-features">Key Features</a> •
-  <a href="#-installation">Installation</a> •
-  <a href="#-quick-start">Quick Start</a> •
-  <a href="#-documentation">Documentation</a> •
-  <a href="#-evaluation">Evaluation</a>
-</p>
+⭐ If you like our project, please give us a star on GitHub!
 
 ---
-
-## 📖 Overview
 
 **E-mem** is a novel memory framework designed to address the "destructive de-contextualization" problem in traditional RAG and long-context systems. Instead of compressing memory into static embeddings or graphs, E-mem shifts the paradigm to **Episodic Context Reconstruction**.
 
@@ -29,6 +18,22 @@ Inspired by biological engrams, E-mem employs a **Heterogeneous Hierarchical Arc
 
 By combining a **Multi-Pathway Routing** mechanism with distributed agentic reasoning, E-mem achieves State-of-the-Art performance on complex benchmarks (LoCoMo, HotpotQA) while significantly reducing token costs compared to full-context approaches.
 
+---
+
+## 📑 Table of Contents
+
+* <a href='#-key-features'>🌟 Key Features</a>
+* <a href='#-installation'>📦 Installation</a>
+* <a href='#-quick-start'>⚡ Quick Start</a>
+* <a href='#-documentation'>📚 Documentation</a>
+* <a href='#-project-structure'>📁 Project Structure</a>
+* <a href='#-testing'>🧪 Testing</a>
+* <a href='#-evaluation-reproducing-results'>📊 Evaluation</a>
+* <a href='#-contributing'>🤝 Contributing</a>
+* <a href='#-license--attribution'>📄 License</a>
+
+---
+
 ## 🌟 Key Features
 
 * **🧩 Episodic Context Reconstruction**: Unlike passive retrieval, Assistant agents actively reason within raw memory contexts to preserve sequential dependencies and logical integrity.
@@ -37,10 +42,10 @@ By combining a **Multi-Pathway Routing** mechanism with distributed agentic reas
     * **Global Alignment**: Summary-based intent filtering.
     * **Semantic Association**: High-dimensional vector similarity.
     * **Symbolic Trigger**: Precise keyword/entity matching.
-* **⚡ Latent State Optimization (KV Cache)**: Supports caching internal neural representations (KV tensors) for Assistant agents. This minimizes re-encoding overhead during memory activation, offering a trade-off between storage and latency.
+* **⚡ Latent State Optimization (KV Cache)**: Supports caching internal neural representations (KV tensors) for Assistant agents. This minimizes re-encoding overhead during memory activation.
 * **🔌 Flexible Storage Modes**:
-    * **Optimization Mode**: Uses local/cached tensors for maximum performance.
-    * **Text Mode**: A lightweight fallback for API-based debugging or cloud inference.
+    * **KV Cache Mode**: Uses local/cached tensors.
+    * **Text Mode**: A lightweight approach for API-based debugging or cloud inference. 
 
 ## 📦 Installation
 
@@ -136,14 +141,23 @@ E-mem/
 │   │   ├── memory_agent/         # Assistant Agent implementation
 │   │   └── router/               # Multi-Pathway Routing (Global/Semantic/Symbolic)
 │   └── utils/                    # Utilities & prompts
+│       ├── parser.py             # Response parsing utilities
+│       └── prompt.py             # System prompt templates
 ├── evaluation/
 │   ├── locomo/                   # LoCoMo benchmark scripts
 │   └── hotpotqa/                 # HotpotQA benchmark scripts
-├── tests/                        # 145 unit tests
+├── examples/                     # Usage examples
+│   ├── quickstart.py             # Quick start demo
+│   ├── example_text_storage.py   # Text storage mode example
+│   └── example_storage_comparison.py
+├── scripts/                      # Evaluation runner scripts
+│   ├── eval_locomo.sh
+│   └── eval_hotpotqa.sh
+├── tests/                        # Unit tests
 ├── docs/                         # Documentation
 ├── config.kv.yaml                # KV cache configuration template
 ├── config.text.yaml              # Text mode configuration template
-└── config.py                     # Configuration loader
+└── config.py                     # YAML → Pydantic configuration loader
 ```
 
 ## 🧪 Testing
@@ -163,7 +177,7 @@ pytest tests/test_chat_manager.py -v
 
 ## 📊 Evaluation (Reproducing Results)
 
-To reproduce the results presented in our paper (ICML 2026 Submission), we provide automated scripts for both **LoCoMo** and **HotpotQA** benchmarks.
+To reproduce the results presented in our paper, we provide automated scripts for both **LoCoMo** and **HotpotQA** benchmarks.
 
 ### LoCoMo Benchmark
 Evaluates long-term memory coherence, including multi-hop and temporal reasoning tasks.
