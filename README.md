@@ -1,6 +1,6 @@
 # E-mem: Multi-Agent Based Episodic Context Reconstruction for LLM Agent Memory
 
-[![arXiv](https://img.shields.io/badge/arXiv-2601.21714-red.svg)](https://arxiv.org/pdf/2601.21714)
+[![arXiv](https://img.shields.io/badge/arXiv-2601.21714-red.svg)](https://arxiv.org/abs/2601.21714)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Code style: Ruff](https://img.shields.io/badge/Code%20style-Ruff-orange.svg)](https://docs.astral.sh/ruff/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
