@@ -10,6 +10,7 @@
 
 ---
 
+🎉Congratulations that E-mem has been accepted by **ICML 2026**.
 **E-mem** is a novel memory framework designed to address the "destructive de-contextualization" problem in traditional RAG and long-context systems. Instead of compressing memory into static embeddings or graphs, E-mem shifts the paradigm to **Episodic Context Reconstruction**.
 
 Inspired by biological engrams, E-mem employs a **Heterogeneous Hierarchical Architecture**:
