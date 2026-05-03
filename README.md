@@ -21,7 +21,7 @@ Inspired by biological engrams, E-mem employs a **Heterogeneous Hierarchical Arc
 By combining a **Multi-Pathway Routing** mechanism with distributed agentic reasoning, E-mem achieves State-of-the-Art performance on complex benchmarks (LoCoMo, HotpotQA) while significantly reducing token costs compared to full-context approaches.
 
 <div align="center">
-  <img src="assets/E-mem.png" width="100%" />
+  <img src="E-mem.png" width="100%" />
   <p><b>E-mem Architecture Overview</b></p>
 </div>
 
